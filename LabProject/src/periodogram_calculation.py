@@ -30,7 +30,8 @@ def calculate_periodogram(measurements, i, method):
         plt.title("Periodogram (Fourier) - #%d" % (i+1))
         plt.xlabel("Period (h)")
         plt.ylabel("R^2")
-        plt.savefig("Periodogram (Fourier) - #%d" %(i+1))
+        plt.savefig("Periodogram (Fourier) - #%d" % (i+1))
+        plt.clf()
     else:
         # check if the max value (the period) is above the p value i.e. is significant
         if p_values[max_index] < np.amax(periodogram_values):
@@ -43,7 +44,7 @@ def calculate_periodogram(measurements, i, method):
         plt.xlabel("Period (h)")
         plt.ylabel("Qp")
         plt.savefig("Periodogram (Chi-Square) - #%d" % (i+1))
-        # TODO: check how to avoid vigures to be drawn one on each ther
+        plt.clf()
 
     return larva_period_value
 
