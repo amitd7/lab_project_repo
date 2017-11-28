@@ -1,9 +1,13 @@
 from datetime import datetime, timedelta
+from matplotlib import style
+from tkinter import filedialog
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy import stats
+import string
+import tkinter as tk
 
 import src.periodogram_calculation as pc
 from src import amplitude_phase, g_factor, clustering
@@ -11,8 +15,9 @@ from src import amplitude_phase, g_factor, clustering
 CIRCADIAN_TIME = HOURS_PER_DAY = 24
 MINUTES_PER_DAY = 1440
 
+style.use("ggplot")
 
-plate_size = (6, 8)
+# plate_size = (6, 8)
 num_of_groups = 2  # number of mutations and wt groups
 types_names = ["WT", "MUT"]
 
@@ -49,7 +54,7 @@ wells_names_by_type = [["A2", "A4", "A6", "A8", "B2", "B4", "B6", "B8", "C2", "C
 # wells_names_by_type = [["A2", "A4"],["A1", "A3"]]
 
 
-def xls_to_csv(path, sheet, csv_file):
+def xls_to_csv(sheet, csv_file):
     """
     converting the xls file to csv
     :param path: the path to the xls file
@@ -57,7 +62,7 @@ def xls_to_csv(path, sheet, csv_file):
     :param csv_file: name of the output csv file
     :return:
     """
-    data_xls = pd.read_excel(path, sheet, index_col=None)
+    data_xls = pd.read_excel(input_file_path, sheet, index_col=None)
     data_xls.to_csv(csv_file, encoding='utf-8')
 
 
@@ -255,24 +260,25 @@ def graph_data():
     ct = circadian_time_list(sampling_intervals, total_days)
     ct = [float("%.2f" % elem) for elem in ct]
 
+    plt.clf()  # clears the entire current figure
+    fig, a = plt.subplots()
     for name in types_names:
         # calc mean values of each row in the table
         data_mean = DF[name].mean(axis=1, skipna=True).values
-
         plt.plot(data_mean)
-        # the space between ticks needed in order to have a tick every 12 hours
-        frequency = int(samples_per_hour * CIRCADIAN_TIME / 2)
-        plt.xticks(np.arange(0, len(ct)+1, frequency), ct[::frequency])
+    # the space between ticks needed in order to have a tick every 12 hours
+    frequency = int(samples_per_hour * CIRCADIAN_TIME / 2)
+    plt.xticks(np.arange(0, len(ct)+1, frequency), ct[::frequency])
 
-        # major ticks every 12 hours, minor ticks every 1 hour
-        ax = plt.gca()
-        minor_ticks = np.arange(0, len(ct)+1, samples_per_hour)
-        ax.set_xticks(minor_ticks, minor=True)
+    # major ticks every 12 hours, minor ticks every 1 hour
+    ax = plt.gca()
+    minor_ticks = np.arange(0, len(ct)+1, samples_per_hour)
+    ax.set_xticks(minor_ticks, minor=True)
 
     plt.legend(types_names, loc='upper left')
     plt.savefig("data_average_graph")
-    plt.show()
-    plt.clf()  # clears the entire current figure
+    # plt.show()
+    return fig
 
 
 def groups_calculation(method):
@@ -348,13 +354,313 @@ def statistic_tests(group1, group2, method):
     return statistic, p_value
 
 
+# GUI and GUI-related functions:
+
+def select_input_file():
+    global input_file_path
+    input_file_path = filedialog.askopenfile()
+    browse_entry.insert(0, input_file_path.name)
+
+
+# def add_entry(master, text):
+#
+#     column, row = master.grid_size()
+#
+#     label = tk.Label(master, text=text)
+#     label.grid(row=row, column=0, sticky=tk.E, padx=2)
+#
+#     entry = tk.Entry(master)
+#     entry.grid(row=row, column=1, sticky=tk.E+tk.W)
+#
+#     return entry
+
+
+def plate_table(master, rows, cols):
+    letters = list(string.ascii_uppercase[:cols])
+
+    for col in range(cols):
+        label = tk.Label(master, bd=2, text=letters[col])
+        label.grid(row=0, column=col+1, padx=2, pady=2)
+
+    for row in range(rows):
+        label = tk.Label(master, bd=2, text=str(row+1))
+        label.grid(row=row+1, column=0, padx=2, pady=2)
+
+    for r in range(1, rows+1):
+        for c in range(1, cols+1):
+            entry_2 = tk.Entry(master, bd=2, width=4)
+            entry_2.grid(row=r, column=c, padx=2, pady=2)
+
+
+def select_groups_screen(previous_root):
+    previous_root.withdraw()
+    root = tk.Tk()
+    root.geometry("425x600")
+    root.resizable(height=False, width=False)
+
+    top_frame = tk.Frame(root)
+    select_groups_label = tk.Label(master=top_frame, font=14,
+                                   text="Please write in every cell the number of group it belongs to ", pady=20)
+    names_label = tk.Label(master=top_frame, text=separate_names_to_show())
+
+    select_groups_label.pack()
+    names_label.pack()
+    top_frame.pack(fill="x")
+
+    table_frame = tk.Frame(root)
+    plate_table(table_frame, int(plate_size_entry.get()), int(plate_size_entry_2.get()))
+    table_frame.pack(expand=True)
+    # table_frame.place(relx=0.5, rely=0.2)
+
+    bottom_frame = tk.Frame(root)
+
+    submit_button = tk.Button(master=bottom_frame, text="  Submit  ", bg='gainsboro',
+                              command=lambda: submit_data(previous_root))
+    submit_button.grid(ipadx=5, padx=5, pady=2)
+
+    back_button = tk.Button(master=bottom_frame, text="  Back  ", bg='gainsboro',
+                            command=lambda: show_preview_screen(root, previous_root))
+    back_button.grid(ipadx=5, padx=5, pady=2)
+
+    bottom_frame.pack(expand=True)
+
+    # root.mainloop()
+
+
+def separate_by_comma(text):
+    return text.split(",")
+
+
+def separate_names_to_show():
+
+    names = separate_by_comma(types_names_entry.get())
+    names_str = ""
+    for i, name in enumerate(names):
+        names_str += str(i) + " - " + name + "  \n"
+    return names_str
+
+
+def show_preview_screen(curr_root, previous_root):
+    previous_root.update()
+    previous_root.deiconify()
+    curr_root.destroy()
+
+
+def validate_user_input():
+    print("validate")
+    # make sure that number values are really numbers
+    # TODO check that all is filled in second screen
+    # TODO check that everything is legal
+
+
+def submit_data(previous_root):
+
+    # TODO check that all is filled
+    # TODO check that everything is legal
+
+    # xls_to_csv("Analysis", "files/csv_file.csv")
+
+    # global full_data_table
+    # TODO change to relative path
+    # full_data_table = parse_input("C:/Users/Amit/PycharmProjects/lab_project_repo/LabProject/files/csv_file.csv")
+    # TODO open a new screen with calculation options
+
+    choose_calculation_screen(previous_root)
+
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+def choose_calculation_screen(previous_root):
+    previous_root.destroy()  # TODO if hide, then need to make sure that when backing it opens the right screen
+    root = tk.Tk()
+    root.geometry("800x600")
+    root.resizable(height=False, width=False)
+
+    # create graph of all data
+
+    top_frame = tk.Frame(root)
+
+    fig = graph_data()
+
+    canvas = FigureCanvasTkAgg(fig, master=top_frame)
+    canvas.show()
+    canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+    top_frame.pack()
+
+    root.mainloop()
+
+
+def enable_button(*args):
+    a = brows_sv.get()
+    b = plate_size_x_sv.get()
+    c = plate_size_y_sv.get()
+    d = num_of_groups_sv.get()
+    e = types_names_sv.get()
+    f = samples_per_hour_sv.get()
+    g = sampling_intervals_sv.get()
+    h = total_days_sv.get()
+    i = start_time_hour_sv.get()
+    j = start_time_minutes_sv.get()
+
+    if a and b and c and d and e and f and g and h and i and j:
+        next_button.config(state='normal')
+    else:
+        next_button.config(state='disabled')
+
+
+def main():
+    root = tk.Tk()
+
+    root.geometry("425x600")
+    root.resizable(height=False, width=False)
+    root.wm_title("Hello")
+
+    top_frame = tk.Frame(master=root)
+
+    title = tk.Label(master=top_frame, text="Welcome to ... tool!", font=("Arial", 24, "bold"))
+    title.pack(fill="x")
+    subtitle = tk.Label(master=top_frame, text="Tool for analysis of Zebrafish circadian rhythms", font=("Arial", 15))
+    subtitle.pack(fill="x")
+    top_frame.pack(fill="x")
+
+    middle_frame = tk.Frame(root)
+
+    logo = tk.PhotoImage(file="sand-time.gif")
+    logo_label = tk.Label(master=top_frame, image=logo, justify='center')
+    logo_label.image = logo
+    logo_label.pack(fill='x', pady=20)
+
+    global browse_entry, plate_size_entry, plate_size_entry_2, num_of_groups_entry, types_names_entry, \
+        samples_per_hour_entry, sampling_intervals_entry, total_days_entry, start_time_hour_entry, \
+        start_time_minutes_entry, next_button
+
+    global brows_sv, plate_size_x_sv, plate_size_y_sv, num_of_groups_sv, types_names_sv, samples_per_hour_sv, \
+        sampling_intervals_sv, total_days_sv, start_time_hour_sv, start_time_minutes_sv
+
+    # create a browse button and locate it
+    browse_button = tk.Button(master=middle_frame, text="  Browse  ", bg='gainsboro',
+                              command=lambda: select_input_file())
+    browse_button.grid(ipadx=5, padx=5, pady=2, sticky=tk.E)
+
+    # create StringVar objects to trace after user input (to then enable the next button)
+    brows_sv = tk.StringVar()
+    brows_sv.trace("w", enable_button)
+
+    plate_size_x_sv = tk.StringVar()
+    plate_size_x_sv.trace("w", enable_button)
+
+    plate_size_y_sv = tk.StringVar()
+    plate_size_y_sv.trace("w", enable_button)
+
+    num_of_groups_sv = tk.StringVar()
+    num_of_groups_sv.trace("w", enable_button)
+
+    types_names_sv = tk.StringVar()
+    types_names_sv.trace("w", enable_button)
+
+    samples_per_hour_sv = tk.StringVar()
+    samples_per_hour_sv.trace("w", enable_button)
+
+    sampling_intervals_sv = tk.StringVar()
+    sampling_intervals_sv.trace("w", enable_button)
+
+    total_days_sv = tk.StringVar()
+    total_days_sv.trace("w", enable_button)
+
+    start_time_hour_sv = tk.StringVar()
+    start_time_hour_sv.trace("w", enable_button)
+
+    start_time_minutes_sv = tk.StringVar()
+    start_time_minutes_sv.trace("w", enable_button)
+
+    # create the widgets
+    browse_entry = tk.Entry(master=middle_frame, bd=2, textvariable=brows_sv)
+
+    plate_size_label = tk.Label(master=middle_frame, text="Plate size: ")
+    plate_size_entry = tk.Entry(master=middle_frame, bd=2, width=5, textvariable=plate_size_x_sv)
+    plate_size_label_2 = tk.Label(master=middle_frame, text=" x ")
+    plate_size_entry_2 = tk.Entry(master=middle_frame, bd=2, width=5, textvariable=plate_size_y_sv)
+
+    num_of_groups_label = tk.Label(master=middle_frame, text="Number of groups: ")
+    num_of_groups_entry = tk.Entry(master=middle_frame, bd=2, textvariable=num_of_groups_sv)
+
+    types_names_label = tk.Label(master=middle_frame, text="Groups names: ")
+    types_names_entry = tk.Entry(master=middle_frame, bd=2, textvariable=types_names_sv)
+
+    samples_per_hour_label = tk.Label(master=middle_frame, text="Samples per 1 hour: ")
+    samples_per_hour_entry = tk.Entry(master=middle_frame, bd=2, textvariable=samples_per_hour_sv)
+
+    sampling_intervals_label = tk.Label(master=middle_frame, text="Sampling intervals (in minutes): ")
+    sampling_intervals_entry = tk.Entry(master=middle_frame, bd=2, textvariable=sampling_intervals_sv)
+
+    # ignore_nan_values = False
+    check_ignore_nan_iv = tk.IntVar()
+    check_ignore_cb = tk.Checkbutton(master=middle_frame, text="Set \'-\' values as \'0\'",
+                                     variable=check_ignore_nan_iv, onvalue=0, offvalue=1)
+
+    total_days_label = tk.Label(master=middle_frame, text="Total Number of days of experiment: ")
+    total_days_entry = tk.Entry(master=middle_frame, bd=2, textvariable=total_days_sv)
+
+    start_time_label = tk.Label(master=middle_frame, text="Start time: ")
+    start_time_hour_label = tk.Label(master=middle_frame, text="hour: ")
+    start_time_minutes_label = tk.Label(master=middle_frame, text=" minutes:           ")
+
+    start_time_hour_entry = tk.Entry(master=middle_frame, bd=2, width=5, textvariable=start_time_hour_sv)
+    start_time_minutes_entry = tk.Entry(master=middle_frame, bd=2, width=5, textvariable=start_time_minutes_sv)
+
+    # locate all widgets on screen
+    browse_entry.grid(row=0, column=1, columnspan=2, sticky=tk.W, pady=2, ipadx=46)
+    plate_size_label.grid(row=1, column=0, sticky=tk.E, pady=2)
+    plate_size_entry.grid(row=1, column=1, sticky=tk.W, pady=2)
+    plate_size_label_2.grid(row=1, column=1, pady=2)
+    plate_size_entry_2.grid(row=1, column=1, sticky=tk.E, pady=2)
+    num_of_groups_label.grid(row=2, column=0, sticky=tk.E, pady=2)
+    num_of_groups_entry.grid(row=2, column=1, pady=2)
+
+    types_names_label.grid(row=3, column=0, sticky=tk.E, pady=2)
+    types_names_entry.grid(row=3, column=1, pady=2)
+
+    start_time_label.grid(row=4, column=0, sticky=tk.E, pady=2)
+    start_time_hour_label.grid(row=4, column=1, sticky=tk.W, pady=2)
+    start_time_hour_entry.grid(row=4, column=1, pady=2)
+    start_time_minutes_label.grid(row=4, column=2, sticky=tk.W, padx=2, pady=2)
+    start_time_minutes_entry.grid(row=4, column=2, sticky=tk.E, pady=2)
+
+    samples_per_hour_label.grid(row=5, column=0, sticky=tk.E, pady=2)
+    samples_per_hour_entry.grid(row=5, column=1, pady=2)
+
+    sampling_intervals_label.grid(row=6, column=0, sticky=tk.E, pady=2)
+    sampling_intervals_entry.grid(row=6, column=1, pady=2)
+
+    total_days_label.grid(row=7, column=0, sticky=tk.E, pady=2)
+    total_days_entry.grid(row=7, column=1, pady=2)
+
+    check_ignore_cb.select()
+    check_ignore_cb.grid(row=8, column=0, columnspan=3)
+
+    middle_frame.pack(fill="x")  # (expand=True)
+
+    bottom_frame = tk.Frame(root)
+
+    next_button = tk.Button(master=bottom_frame, text="  Next  ", font=14, bg='gainsboro', state='disabled',
+                            command=lambda: select_groups_screen(root))
+    next_button.grid(ipadx=10, pady=10)
+
+    bottom_frame.pack(fill="x", side=tk.BOTTOM)
+    bottom_frame.place(relx=0.5, rely=0.9, anchor=tk.CENTER)
+
+    root.mainloop()
+
+
 if __name__ == "__main__":
 
-    # xls_to_csv("files/example3.xlsx", "Analysis", "files/csv_file.csv")
+    # xls_to_csv("Analysis", "files/csv_file.csv")
     DF = parse_input("C:/Users/Amit/PycharmProjects/lab_project_repo/LabProject/files/csv_file.csv")
 
     # TODO calc_statistic_values(tables_dict[types_names[i]])
     # graph_data()
+    # print(f)
+
+    main()
     # calculate_activity_patterns(DF['WT'], "amplitude_phase")
     # print(groups_calculation("amplitude_phase"))
 
