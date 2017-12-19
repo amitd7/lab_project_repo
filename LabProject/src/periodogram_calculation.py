@@ -2,12 +2,19 @@ import numpy as np
 import matplotlib.pyplot as plt
 import math
 from math import cos, pi, sin
-# from pylab import *
 from pprint import pprint
 
 
+global from_period, to_period
+# from_period = 960  # TODO if I to init the global variables, will they be updated from the user's input?
+# to_period = 1920
+
+
 # calculate the period of one larva by the chosen method (fourier or chi square)
-def calculate_periodogram(measurements, i, method):
+def calculate_periodogram(measurements, i, method, interval):
+
+    global interval_duration
+    interval_duration = interval  # TODO make sure it is initizlized
 
     if method == "fourier":
         periods, periodogram_values, p_values = calculate_fourier_periodogram(measurements)
@@ -24,42 +31,40 @@ def calculate_periodogram(measurements, i, method):
     mark_max_value = [significant_period] * len(periods)
 
     if method == "fourier":
-        larva_period_value = significant_period
+        larva_period_value = float("%.2f" % significant_period)
 
+        plt.figure()
         plt.plot(periods, periodogram_values, 'b', mark_max_value, periodogram_values, 'k:')
         plt.title("Periodogram (Fourier) - #%d" % (i+1))
         plt.xlabel("Period (h)")
         plt.ylabel("R^2")
         plt.savefig("Periodogram (Fourier) - #%d" % (i+1))
-        plt.clf()
+        plt.close()
+        # plt.clf()
     else:
         # check if the max value (the period) is above the p value i.e. is significant
         if p_values[max_index] < np.amax(periodogram_values):
-            larva_period_value = significant_period
+            larva_period_value = float("%.2f" % significant_period)
         else:
             larva_period_value = 0  # TODO: which number to insert when it is not significant 0 or nan??
 
+        plt.figure()
         plt.plot(periods, periodogram_values, 'b', periods, p_values, 'r--', mark_max_value, periodogram_values, 'k:')
         plt.title("Periodogram (Chi-Square) - #%d" % (i+1))
         plt.xlabel("Period (h)")
         plt.ylabel("Qp")
         plt.savefig("Periodogram (Chi-Square) - #%d" % (i+1))
-        plt.clf()
+        plt.close()
+        # plt.clf()
 
     return larva_period_value
-
-
-FROM_PERIOD = 960
-TO_PERIOD = 1920
-INTERVAL_DURATION = 10
-
-fp = int(FROM_PERIOD / INTERVAL_DURATION)
-tp = int(TO_PERIOD / INTERVAL_DURATION)
 
 
 def calculate_fourier_periodogram(measurements, p_value=0.05):
     n = len(measurements)
     sum_r2 = 0.0
+    fp = int(from_period / interval_duration)
+    tp = int(to_period / interval_duration)
 
     periods = list(range(fp, tp))
     periodogram_values = []
@@ -95,6 +100,8 @@ def r2(measurements, j):
 def calc_chi_square_periodogram(measurements, p_value=0.05):
     M = 0
     n = len(measurements)
+    fp = int(from_period / interval_duration)
+    tp = int(to_period / interval_duration)
 
     periodogram_values = [None] * (tp - fp)
     period = [None] * (tp - fp)
@@ -115,7 +122,7 @@ def calc_chi_square_periodogram(measurements, p_value=0.05):
 
     for P in range(fp, tp):
         Qp = 0
-        K = n / P # integer division
+        K = n / P  # integer division
         for h in range(0, P):
             Mh = 0
             for k in range(0, int(K)):
@@ -129,7 +136,7 @@ def calc_chi_square_periodogram(measurements, p_value=0.05):
         period[P - fp] = P
         periodogram_values[P - fp] = float(Qp)
         pv = p_value / 10.0
-        p_values[P - fp] = float (chi_square_cdf_inv(1 - pv, P-1))
+        p_values[P - fp] = float(chi_square_cdf_inv(1 - pv, P-1))
 
     return period, periodogram_values, p_values
 
@@ -161,7 +168,7 @@ def erf_inv(x):
 
 # incorporate calibration
 def inc_calib(periods):
-    factor = INTERVAL_DURATION
+    factor = interval_duration
     for i in range(periods.size):
         periods[i] *= factor
     return periods

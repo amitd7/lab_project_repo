@@ -1,402 +1,80 @@
 from datetime import datetime, timedelta
 from matplotlib import style
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from tkinter import filedialog
+from tkinter import ttk
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from scipy import stats
+# from scipy import stats
 import string
 import tkinter as tk
 
-import src.periodogram_calculation as pc
-from src import amplitude_phase, g_factor, clustering
+# import src.periodogram_calculation as pc
+# from src import amplitude_phase, g_factor, clustering
+from src import core
 
 CIRCADIAN_TIME = HOURS_PER_DAY = 24
+MINUTES_PER_HOUR = 60
 MINUTES_PER_DAY = 1440
 
 style.use("ggplot")
 
-# plate_size = (6, 8)
-num_of_groups = 2  # number of mutations and wt groups
-types_names = ["WT", "MUT"]
-
-sampling_intervals = 10  # in minutes
-
-samples_per_hour = 6
-number_of_days = 3
-# select the relevant days
-hours_to_ignore_beg = 24  # hours to ignore from the beginning
-hours_to_ignore_end = 24  # hours to ignore from the end
-ignore_part_beg = hours_to_ignore_beg * samples_per_hour  # number of samples to ignore from the beginning
-ignore_part_end = hours_to_ignore_end * samples_per_hour  # number of samples to ignore from the end
-
-# if false, all the '-' values in the data will translate as 0, otherwise as None and will be out of calculations
-ignore_nan_values = False
-
-total_days = 5  # TODO should be in days??
-
-start_time = datetime(datetime.now().year, datetime.now().month, datetime.now().day, hour=9, minute=0)
-
-total_num_of_values = int(MINUTES_PER_DAY / sampling_intervals * total_days)
-
-# The relevant columns to parse
-cols_labels = 2  # col 'C'
-time_labels = 3  # col 'D'
-data_col = 5  # col 'F'
-
-# TODO generalize the lists
-# wells_names_by_type is a list of lists. each inner list contains the wells names of each type
-wells_names_by_type = [["A2", "A4", "A6", "A8", "B2", "B4", "B6", "B8", "C2", "C4", "C6", "C8", "D1", "D3", "D5",
-                        "D7", "E1", "E3", "E5", "E7", "F1", "F3", "F5", "F7"],
-                       ["A1", "A3", "A5", "A7", "B1", "B3", "B5", "B7", "C1", "C3", "C5", "C7", "D2", "D4", "D6",
-                        "D8", "E2", "E4", "E6", "E8", "F2", "F4", "F6", "F8"]]
-# wells_names_by_type = [["A2", "A4"],["A1", "A3"]]
-
-
-def xls_to_csv(sheet, csv_file):
-    """
-    converting the xls file to csv
-    :param path: the path to the xls file
-    :param sheet: name of sheet to convert
-    :param csv_file: name of the output csv file
-    :return:
-    """
-    data_xls = pd.read_excel(input_file_path, sheet, index_col=None)
-    data_xls.to_csv(csv_file, encoding='utf-8')
-
-
-def parse_input(input_file):
-    """
-
-    :param input_file: input filename
-    :return:
-    """
-
-    selected_cols = [cols_labels, time_labels, data_col]
-    temp_labels = 'type', 'time', 'data'
-    # TODO find how to generalize the header value
-    all_data = pd.read_csv(input_file, header=3, names=temp_labels, usecols=selected_cols, low_memory=False)
-
-    return {types_names[i]: create_data_table(all_data, wells_names_by_type[i]) for i in range(0, num_of_groups)}
-
-
-def time_range(start, end, delta):
-    """
-    Generates values of time range between start and end with delta interval
-    :param start:
-    :param end:
-    :param delta:
-    :return:
-    """
-    curr = start
-    while curr < end:
-        yield curr
-        curr += delta
-
-
-def time_range_list(start, days, interval):
-    """
-    create a list of time using time_range function from start_time up to total_days days with interval of
-    sampling_intervals
-    :param start:
-    :param days:
-    :param interval:
-    :return:
-    """
-    return [result.time().isoformat() for result in time_range(start, start.replace() +
-                                                    timedelta(days=days), timedelta(minutes=interval))]
-
-
-def circadian_time_list(interval, num_of_days):
-    """
-
-    :param interval:
-    :param num_of_days:
-    :return:
-    """
-    num_of_values_per_day = MINUTES_PER_DAY / interval
-    x = float(60/interval)
-    return [int((i/x))+float((i % x)/x) for i in range(0, int(num_of_values_per_day*num_of_days)+1)]
-
-
-def create_data_table(data, selected_wells):
-    """
-    creates data table for specific type of sample group (for example to WT sample)
-    :param data:
-    :param selected_wells:
-    :return:
-    """
-
-    list_time = time_range_list(start_time, total_days, sampling_intervals)
-
-    # return all rows that relate to the wt wells.
-    data_rows = [[row for index, row in data.iterrows() if row['type'] == well] for well in selected_wells]
-
-    # create list of data values lists
-    if not ignore_nan_values:
-        unknown_val = 0
-    else:
-        unknown_val = None
-    data_values = [[float(data[2]) if data[2] != '-' else unknown_val for data in inner_list] for inner_list in
-                   data_rows]
-
-    # dictionary of well name and its data values
-    data_dict = dict(zip(selected_wells, data_values))
-
-    # Create DataFrame for each wt and mutant data
-    df = pd.DataFrame.from_dict(data_dict)
-
-    # Set DataFrame labels
-    df.index = list_time
-
-    return df
-
-
-def calc_statistic_values(df):
-    """
-
-    :param df:
-    :return:
-    """
-
-    # calc mean values of each row
-    mean_value = df.mean(axis=1, skipna=True)
-
-    # calc std values of each row
-    std_value = df.std(axis=1, skipna=True)
-
-    # calc standard error values of each row
-    se_value = df.sem(axis=1, skipna=True)
-
-    # add values to table
-    # df['mean'] = mean_value
-    # df['std'] = std_value
-    # df['s. error'] = se_value
-    # TODO make sure id adds the values and they can be seen outside the function
-
-    return mean_value, std_value, se_value
-
-
-def calculate_activity_patterns(data_table, method):
-    """
-    calculates period by fourier (0), period by chi-square (1), amplitude and phase (2), g factor (3)
-    the calculation is made for all larvas of one group type.
-    the return value is a list of values of each larva
-    :param data_table: data table of one group
-    :param method:
-    :return:
-    """
-
-    values = []
-    columns_headers = data_table.columns.values.tolist()
-
-    # runs on every larva in the group and calculates the chosen calculation
-    for i, header in enumerate(columns_headers):
-        samples_data = data_table[header].tolist()
-
-        # removes the ignored hours - i.e the irrelevant rows
-        relevant_data = np.array(samples_data[ignore_part_beg - 1: len(samples_data) - ignore_part_end - 1])
-        if method == "fourier":
-            value = pc.calculate_periodogram(relevant_data, i, "fourier")
-        elif method == "chi_square":
-            value = pc.calculate_periodogram(relevant_data, i, "chi_square")
-        elif method == "amplitude_phase":
-            window_size = 20
-            times = time_range_list(start_time, total_days, sampling_intervals)
-            circadian_time = circadian_time_list(sampling_intervals, total_days)
-            value = amplitude_phase.amplitude_phase(moving_average(samples_data, window_size), window_size,
-                                                    samples_per_hour, times, circadian_time)
-        elif method == "g_factor":
-            value = g_factor.g_factor_calculation(relevant_data, number_of_days, samples_per_hour)
-            # TODO add a call for the function g_factor_significant()
-        elif method == "clustering":
-            value = None
-            print("clustering")  # TODO
-        else:
-            value = None
-        values.append(value)
-
-    print("all_larvas_values: ", values)
-    return values
-
-
-def smooth_group_data(data_table, window=20):
-    """
-    Runs over all larvas in one group and smooths the data using moving average
-    :param data_table:
-    :param window:
-    :return:
-    """
-    columns_headers = data_table.columns.values.tolist()
-    smoothed_data_array = []
-    # runs on every larva in the group and smooth the data
-    for header in columns_headers:
-        smoothed_data_array.append(moving_average(data_table[header].tolist(), window))
-
-    smoothed_data_array = pd.DataFrame(smoothed_data_array).T
-    # TODO: add the correct time list as the size of data is smaller
-    return smoothed_data_array
-
-
-def moving_average(x, window=20):
-    """
-    Smooths the data in the column vector x using a moving average
-    :param x: data list
-    :param window: The default span for the moving average is 20
-    :return: list of smoothed data
-    """
-    cum_sum = np.cumsum(np.insert(x, 0, 0))
-    return (cum_sum[window:] - cum_sum[:-window]) / window
-
-
-def graph_data():
-    """
-    Create a graph of the average data of each group
-    (contains all days of experiment)
-    :return:
-    """
-
-    ct = circadian_time_list(sampling_intervals, total_days)
-    ct = [float("%.2f" % elem) for elem in ct]
-
-    plt.clf()  # clears the entire current figure
-    fig, a = plt.subplots()
-    for name in types_names:
-        # calc mean values of each row in the table
-        data_mean = DF[name].mean(axis=1, skipna=True).values
-        plt.plot(data_mean)
-    # the space between ticks needed in order to have a tick every 12 hours
-    frequency = int(samples_per_hour * CIRCADIAN_TIME / 2)
-    plt.xticks(np.arange(0, len(ct)+1, frequency), ct[::frequency])
-
-    # major ticks every 12 hours, minor ticks every 1 hour
-    ax = plt.gca()
-    minor_ticks = np.arange(0, len(ct)+1, samples_per_hour)
-    ax.set_xticks(minor_ticks, minor=True)
-
-    plt.legend(types_names, loc='upper left')
-    plt.savefig("data_average_graph")
-    # plt.show()
-    return fig
-
-
-def groups_calculation(method):
-
-    # TODO make the function more efficient?
-    groups_calc_values = {}
-    groups_amps_values = {}
-    groups_phase_values = {}
-    for name in types_names:
-        values = calculate_activity_patterns(DF[name], method)
-        if method == "amplitude_phase":
-            formatted_values = [(float("%.2f" % elem[0]), (elem[1][0], float("%.2f" % elem[1][1]))) for elem in values]
-
-            amps = [float("%.2f" % elem[0]) for elem in values]
-            phase_circ = [float("%.2f" % elem[1][1]) for elem in values]  # only circadian values
-
-            groups_amps_values[name] = (amps, ("mean", float("%.2f" % np.mean(amps))), ("sem",
-                                                                                        float("%.2f" % stats.sem(amps))))
-            groups_phase_values[name] = (phase_circ, ("mean", float("%.2f" % np.mean(phase_circ))),
-                                         ("sem", float("%.2f" % stats.sem(phase_circ))))
-
-            groups_calc_values[name] = formatted_values
-        else:
-            formatted_values = [float("%.2f" % elem) for elem in values]
-            groups_calc_values[name] = (formatted_values, ("mean", float("%.2f" % np.mean(formatted_values))),
-                                        ("sem", float("%.2f" % stats.sem(formatted_values))))
-
-    manage_statistic_tests(method, groups_calc_values, groups_amps_values, groups_phase_values)
-
-    return groups_calc_values
-
-
-def manage_statistic_tests(method, groups_values, groups_amps_values, groups_phase_values):
-
-    if num_of_groups > 2:
-        statistic_anova_test(groups_values, groups_amps_values, groups_phase_values)
-    else:
-        type1 = types_names[0]
-        type2 = types_names[1]
-        if method == "amplitude_phase":
-            statistic, p_value = statistic_tests(groups_amps_values[type1][0], groups_amps_values[type2][0], method)
-            print("statistic amp: ", statistic, "p_value amp: ", p_value)
-            statistic, p_value = statistic_tests(groups_phase_values[type1][0], groups_phase_values[type2][0], method)
-            print("statistic phase: ", statistic, "p_value phase: ", p_value)
-        else:
-            statistic, p_value = statistic_tests(groups_values[type1][0], groups_values[type2][0], method)
-            print("statistic: ", statistic, "p_value: ", p_value)
-
-
-def statistic_anova_test(groups_values, groups_amps_values, groups_phase_values):
-    stats.f_oneway()
-    # TODO see how to send all the lists in the same time
-    statistic = p_value = 0
-
-    return statistic, p_value
-
-
-def statistic_tests(group1, group2, method):
-    """
-    take a statistic test between the two groups according to the method used
-    :param group1:
-    :param group2:
-    :param method:
-    :return:
-    """
-
-    statistic = p_value = 0
-    if method == "fourier" or method == "chi_square" or method == "amplitude_phase":
-        statistic, p_value = stats.ttest_ind(group1, group2)
-    elif method == "g_factor":
-        statistic, p_value = g_factor.g_factor_significant(group1, group2)
-
-    return statistic, p_value
-
 
 # GUI and GUI-related functions:
 
+
 def select_input_file():
+    """
+
+    :return:
+    """
     global input_file_path
-    input_file_path = filedialog.askopenfile()
-    browse_entry.insert(0, input_file_path.name)
-
-
-# def add_entry(master, text):
-#
-#     column, row = master.grid_size()
-#
-#     label = tk.Label(master, text=text)
-#     label.grid(row=row, column=0, sticky=tk.E, padx=2)
-#
-#     entry = tk.Entry(master)
-#     entry.grid(row=row, column=1, sticky=tk.E+tk.W)
-#
-#     return entry
+    input_file_path = filedialog.askopenfile().name
+    browse_entry.insert(0, input_file_path)
 
 
 def plate_table(master, rows, cols):
+    """
+
+    :param master:
+    :param rows:
+    :param cols:
+    :return:
+    """
     letters = list(string.ascii_uppercase[:cols])
+    entries_table = [[None for x in range(cols)] for y in range(rows)]
 
     for col in range(cols):
-        label = tk.Label(master, bd=2, text=letters[col])
+        label = tk.Label(master, bd=2, text=str(col+1))
         label.grid(row=0, column=col+1, padx=2, pady=2)
 
     for row in range(rows):
-        label = tk.Label(master, bd=2, text=str(row+1))
+        label = tk.Label(master, bd=2, text=letters[row])
         label.grid(row=row+1, column=0, padx=2, pady=2)
 
     for r in range(1, rows+1):
         for c in range(1, cols+1):
-            entry_2 = tk.Entry(master, bd=2, width=4)
-            entry_2.grid(row=r, column=c, padx=2, pady=2)
+            entry = tk.Entry(master, bd=2, width=4)
+            entries_table[r-1][c-1] = entry
+            entry.grid(row=r, column=c, padx=2, pady=2)
+
+    return entries_table
 
 
 def select_groups_screen(previous_root):
+    """
+    second screen, associate every larva to it's group
+    :param previous_root:
+    :return:
+    """
     previous_root.withdraw()
     root = tk.Tk()
     root.geometry("425x600")
     root.resizable(height=False, width=False)
+
+    set_global_values()
 
     top_frame = tk.Frame(root)
     select_groups_label = tk.Label(master=top_frame, font=14,
@@ -408,18 +86,18 @@ def select_groups_screen(previous_root):
     top_frame.pack(fill="x")
 
     table_frame = tk.Frame(root)
-    plate_table(table_frame, int(plate_size_entry.get()), int(plate_size_entry_2.get()))
+    global submit_button
+    plate_table_values = plate_table(table_frame, int(plate_size_entry.get()), int(plate_size_entry_2.get()))
     table_frame.pack(expand=True)
-    # table_frame.place(relx=0.5, rely=0.2)
 
     bottom_frame = tk.Frame(root)
 
     submit_button = tk.Button(master=bottom_frame, text="  Submit  ", bg='gainsboro',
-                              command=lambda: submit_data(previous_root))
+                              command=lambda: submit_data(root, plate_table_values))
     submit_button.grid(ipadx=5, padx=5, pady=2)
 
     back_button = tk.Button(master=bottom_frame, text="  Back  ", bg='gainsboro',
-                            command=lambda: show_preview_screen(root, previous_root))
+                            command=lambda: show_previous_screen(root, previous_root))
     back_button.grid(ipadx=5, padx=5, pady=2)
 
     bottom_frame.pack(expand=True)
@@ -427,12 +105,37 @@ def select_groups_screen(previous_root):
     # root.mainloop()
 
 
+def is_groups_table_full(plate_values):
+    """
+    checks if all entries in the select groups screen are filled
+    :param plate_values:
+    :return:
+    """
+    row = len(plate_values)
+    col = len(plate_values[0])
+
+    for r in range(row):
+        for c in range(col):
+            if not plate_values[r][c].get():
+                print("empty")
+                return False
+    return True
+
+
 def separate_by_comma(text):
+    """
+
+    :param text:
+    :return:
+    """
     return text.split(",")
 
 
 def separate_names_to_show():
-
+    """
+    create a string of groups and groups number to show for easier group selection
+    :return:
+    """
     names = separate_by_comma(types_names_entry.get())
     names_str = ""
     for i, name in enumerate(names):
@@ -440,71 +143,503 @@ def separate_names_to_show():
     return names_str
 
 
-def show_preview_screen(curr_root, previous_root):
+def show_previous_screen(curr_root, previous_root):
+    """
+    show previous screen and destroy current screen
+    :param curr_root:
+    :param previous_root:
+    :return:
+    """
     previous_root.update()
     previous_root.deiconify()
     curr_root.destroy()
 
 
-def validate_user_input():
-    print("validate")
-    # make sure that number values are really numbers
-    # TODO check that all is filled in second screen
-    # TODO check that everything is legal
+# def validate_user_input():
+#     """
+#
+#     :return:
+#     """
+#     print("validate")
+#     # make sure that number values are really numbers
+#     # TODO check that all is filled in second screen
+#     # TODO check that everything is legal
 
 
-def submit_data(previous_root):
+def submit_data(previous_root, plate_values):
+    """
+
+    :param previous_root:
+    :param plate_values:
+    :return:
+    """
 
     # TODO check that all is filled
     # TODO check that everything is legal
+    core.xls_to_csv(input_file_path, "Analysis", "C:/Users/Amit/PycharmProjects/lab_project_repo/LabProject/files/csv_file.csv")
+    input_file = "C:/Users/Amit/PycharmProjects/lab_project_repo/LabProject/files/csv_file.csv"  # TODO change to relative path
 
-    # xls_to_csv("Analysis", "files/csv_file.csv")
+    global full_data_table
+    global wells_names_by_type  # TODO should define in another place??
+    if is_groups_table_full(plate_values):
+        plate_table_vals = [[val.get() for val in lst] for lst in plate_values]
+        wells_names_by_type = separate_by_group(plate_table_vals)
 
-    # global full_data_table
-    # TODO change to relative path
-    # full_data_table = parse_input("C:/Users/Amit/PycharmProjects/lab_project_repo/LabProject/files/csv_file.csv")
-    # TODO open a new screen with calculation options
+        full_data_table = core.parse_input(input_file, types_names, wells_names_by_type, num_of_groups, start_time,
+                                           total_days, sampling_intervals, excel_well_labels, excel_time, excel_data,
+                                           none_to_num)
+        choose_calculation_screen(previous_root)
 
-    choose_calculation_screen(previous_root)
 
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+def group_table_to_names(table_vals):
+    """
+    Create a table of well names at the same size as the zebrafish plate
+    :param table_vals: the table received from the user for choosing groups
+    :return:
+    """
+    letters = list(string.ascii_uppercase)
+    numbers = range(len(letters))
+    row = len(table_vals)
+    col = len(table_vals[0])
+    return [[str(letters[i]) + str(numbers[j+1]) for j in range(col)]for i in range(row)]
+
+
+def separate_by_group(table_vals):
+    """
+    Separate the wells by groups.
+    Creates a nested list of the wells names of each experiment group
+    :param table_vals:
+    :return:
+    """
+
+    names_table = group_table_to_names(table_vals)
+
+    row = len(table_vals)
+    col = len(table_vals[0])
+
+    wells_by_group = [[] for x in range(num_of_groups)]
+
+    for i in range(row):
+        for j in range(col):
+            wells_by_group[int(table_vals[i][j])].append(str(names_table[i][j]))
+    return wells_by_group
+
+
 def choose_calculation_screen(previous_root):
-    previous_root.destroy()  # TODO if hide, then need to make sure that when backing it opens the right screen
+    """
+
+    :param previous_root:
+    :return:
+    """
+
+    previous_root.withdraw()  # TODO if hide, then need to make sure that when backing it opens the right screen
     root = tk.Tk()
-    root.geometry("800x600")
+    root.geometry("640x640")
     root.resizable(height=False, width=False)
 
-    # create graph of all data
-
     top_frame = tk.Frame(root)
-
-    fig = graph_data()
-
+    # create graph of all data
+    fig = core.graph_data(sampling_intervals, total_days, types_names, full_data_table, samples_per_hour)  # todo remark added function input
     canvas = FigureCanvasTkAgg(fig, master=top_frame)
     canvas.show()
     canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
     top_frame.pack()
 
+    bottom_frame = tk.Frame(root)
+
+    period_btn = tk.Button(master=bottom_frame, text="  Calculate Period  ", bg='gainsboro',
+                           command=lambda: period_settings_popup(root, "period"))
+    period_btn.grid(ipadx=5, padx=5, pady=3)
+
+    g_factor_btn = tk.Button(master=bottom_frame, text="  Calculate G factor  ", bg='gainsboro',
+                             command=lambda: period_settings_popup(root, "g_factor"))
+    g_factor_btn.grid(ipadx=5, padx=5, pady=3)
+
+    amplitude_btn = tk.Button(master=bottom_frame, text="  Calculate Amplitude & Phase  ", bg='gainsboro',
+                              command=lambda: amplitude_settings_popup(root, "amplitude_phase"))
+    amplitude_btn.grid(ipadx=5, padx=5, pady=3)
+
+    # clustering_btn = tk.Button(master=bottom_frame, text="  Clustering  ", bg='gainsboro')
+    # clustering_btn.grid(ipadx=5, padx=5, pady=3)
+
+    export_data_btn = tk.Button(master=bottom_frame, text="  Export Raw Data  ", bg='gainsboro',
+                                command=lambda: export_raw_data(full_data_table))
+    export_data_btn.grid(ipadx=5, padx=5, pady=3)
+
+    back_btn = tk.Button(master=bottom_frame, text="  Back  ", bg='gainsboro',
+                         command=lambda: show_previous_screen(root, previous_root))
+    back_btn.grid(ipadx=5, padx=5, pady=3)
+
+    bottom_frame.pack()
     root.mainloop()
 
 
-def enable_button(*args):
-    a = brows_sv.get()
-    b = plate_size_x_sv.get()
-    c = plate_size_y_sv.get()
-    d = num_of_groups_sv.get()
-    e = types_names_sv.get()
-    f = samples_per_hour_sv.get()
-    g = sampling_intervals_sv.get()
-    h = total_days_sv.get()
-    i = start_time_hour_sv.get()
-    j = start_time_minutes_sv.get()
+def period_settings_popup(previous_root, action):
+    """
 
-    if a and b and c and d and e and f and g and h and i and j:
-        next_button.config(state='normal')
+    :param previous_root:
+    :param action:
+    :return:
+    """
+    period_settings = tk.Toplevel(master=previous_root)
+    period_settings.wm_title("Settings")
+
+    period_settings.grab_set()  # set the focus on the popup only
+    print("action: ", action)
+    top_frame = tk.Frame(master=period_settings)
+
+    global from_day_entry, for_days_entry, from_period_entry, to_period_entry
+
+    value = tk.StringVar()
+    box = ttk.Combobox(top_frame, textvariable=value, state='readonly')  # TODO can I remove the value variable?
+    if action == "period":
+        methods_label = tk.Label(master=top_frame, text="Choose method: ")
+        methods_label.grid(row=0, column=0, sticky=tk.E, pady=3)
+
+        methods = ["fourier", "chi_square"]
+
+        box["values"] = methods
+        box.current(0)
+        box.grid(row=0, column=1, padx=2, pady=3, columnspan=4, sticky=tk.W)
+
+        range_label = tk.Label(master=top_frame, text="Periods range (hours): ")
+        range_label.grid(row=2, column=0, sticky=tk.E, pady=3)
+
+        from_period_label = tk.Label(master=top_frame, text="from ")
+        from_period_label.grid(row=2, column=1, pady=3, sticky=tk.W)
+
+        from_period_entry = tk.Entry(master=top_frame, bd=3, width=5)
+        from_period_entry.insert(0, 16)
+        from_period_entry.grid(row=2, column=2, pady=3)
+
+        to_period_label = tk.Label(master=top_frame, text=" to ")
+        to_period_label.grid(row=2, column=3, pady=3)
+
+        to_period_entry = tk.Entry(master=top_frame, bd=2, width=5)
+        to_period_entry.insert(0, 32)
+        to_period_entry.grid(row=2, column=4, pady=3)
+
+    days_label = tk.Label(master=top_frame, text="Start calculate from ")
+    days_label.grid(row=1, column=0, sticky=tk.E, pady=3)
+
+    from_day_label = tk.Label(master=top_frame, text="hours for ")
+    from_day_label.grid(row=1, column=2, pady=3, sticky=tk.W)
+
+    from_day_entry = tk.Entry(master=top_frame, bd=2, width=5)
+    from_day_entry.grid(row=1, column=1, pady=3)
+
+    for_days_entry = tk.Entry(master=top_frame, bd=2, width=5)
+    for_days_entry.grid(row=1, column=3, pady=3)
+
+    to_day_label = tk.Label(master=top_frame, text=" days ")
+    to_day_label.grid(row=1, column=4, pady=3)
+
+    cancel_btn = tk.Button(master=top_frame, text="  Cancel  ", command=lambda: cancel_action(period_settings,
+                                                                                              previous_root))
+    cancel_btn.grid(row=4, column=0, columnspan=2, pady=10)
+
+    calculate_btn = tk.Button(master=top_frame, text="  Calculate  ", command=lambda: calc_action(action, box.get()))
+    calculate_btn.grid(row=4, column=2, columnspan=2, pady=10)
+
+    top_frame.pack()
+    period_settings.mainloop()
+
+
+def amplitude_settings_popup(previous_root, action):
+    """
+
+    :param previous_root:
+    :param action:
+    :return:
+    """
+    amplitude_settings = tk.Toplevel(master=previous_root)
+    amplitude_settings.wm_title("Settings")
+
+    amplitude_settings.grab_set()  # set the focus on the popup only
+    print("action: ", action)
+    top_frame = tk.Frame(master=amplitude_settings)
+
+    global window_entry, amp_from_day_entry, avg_amp_from_time_entry, avg_amp_days_entry
+
+    window_label = tk.Label(master=top_frame, text="Moving average window size: ")
+    window_label.grid(row=0, column=0, pady=3, sticky=tk.E)
+
+    window_entry = tk.Entry(master=top_frame, bd=3, width=5)
+    window_entry.insert(0, 20)
+    window_entry.grid(row=0, column=1, pady=3, sticky=tk.W)
+
+    amp_day_label = tk.Label(master=top_frame, text="Calculate amplitude from ")
+    amp_day_label.grid(row=1, column=0,  pady=3, sticky=tk.E)
+
+    # amp_from_day_label = tk.Label(master=top_frame, text="from ")
+    # amp_from_day_label.grid(row=1, column=1, pady=3, sticky=tk.W)
+
+    amp_from_day_entry = tk.Entry(master=top_frame, bd=2, width=5)
+    amp_from_day_entry.grid(row=1, column=1, pady=3)
+
+    amp_to_day_label = tk.Label(master=top_frame, text="hours ")
+    amp_to_day_label.grid(row=1, column=2, pady=3)
+
+    calculate_btn = tk.Button(master=top_frame, text="  Calculate  ", command=lambda: calc_action(action, None))
+    calculate_btn.grid(row=2, column=2, columnspan=3, pady=10)
+
+    days_label = tk.Label(master=top_frame, text="For average amplitude calculate from ")
+    days_label.grid(row=3, column=0, sticky=tk.E, pady=3)
+
+    avg_amp_from_time_entry = tk.Entry(master=top_frame, bd=2, width=5)
+    avg_amp_from_time_entry.grid(row=3, column=1, pady=3)
+
+    from_day_label = tk.Label(master=top_frame, text="hours for ")
+    from_day_label.grid(row=3, column=2, pady=3, sticky=tk.W)
+
+    avg_amp_days_entry = tk.Entry(master=top_frame, bd=2, width=5)
+    avg_amp_days_entry.grid(row=3, column=3, pady=2)
+
+    to_day_label = tk.Label(master=top_frame, text=" days ")
+    to_day_label.grid(row=3, column=4, pady=3)
+
+    cancel_btn = tk.Button(master=top_frame, text="  Cancel  ", command=lambda: cancel_action(amplitude_settings,
+                                                                                              previous_root))
+    cancel_btn.grid(row=4, column=0, columnspan=2, pady=10)
+
+    average_amp_calculate_btn = tk.Button(master=top_frame, text="  Calculate average amplitude   ",
+                                          command=lambda: average_amp_calc_action())
+    average_amp_calculate_btn.grid(row=4, column=2, columnspan=3, pady=10)
+
+    top_frame.pack()
+    amplitude_settings.mainloop()
+
+
+def calc_action(action, method_type):
+    """
+
+    :param action:
+    :param method_type:
+    :return:
+    """
+    print("method:  ", method_type)
+
+    ignore_part_beg = 0
+    ignore_part_end = 0
+
+    if action == "amplitude_phase":
+        core.window_size = int(window_entry.get())
+        core.amplitude_phase.day_start = int(amp_from_day_entry.get())
     else:
-        next_button.config(state='disabled')
+        hours_to_ignore_beg = int(from_day_entry.get())
+        period_to_day = int(for_days_entry.get()) * HOURS_PER_DAY + hours_to_ignore_beg
+        hours_to_ignore_end = (total_days * HOURS_PER_DAY) - period_to_day
+
+        # select the relevant days
+        ignore_part_beg = int(hours_to_ignore_beg * samples_per_hour)  # number of samples to ignore from the beginning
+        ignore_part_end = int(hours_to_ignore_end * samples_per_hour)  # number of samples to ignore from the end
+        if action == "period":
+            action = method_type
+            core.pc.from_period = int(from_period_entry.get()) * MINUTES_PER_HOUR
+            core.pc.to_period = int(to_period_entry.get()) * MINUTES_PER_HOUR
+
+    results_values = core.groups_calculation(action, types_names, full_data_table, num_of_groups, start_time,
+                                             total_days, sampling_intervals, ignore_part_beg, ignore_part_end,
+                                             samples_per_hour)
+    print("results_values:   ", results_values)
+    core.plot_results_graph(results_values, types_names, action)
+    if action == "amplitude_phase":
+        results_values = break_amp_phase_to_dict(results_values)
+        print("temp amplitude_phase:   ", results_values)
+    save_to_excel(results_values, action)
+
+
+def average_amp_calc_action():
+
+    print("in average_amp_calc_action")
+    c_times = core.circadian_time_list(sampling_intervals, total_days)
+    average_amp = core.amplitude_phase.average_amplitude_wrap(int(avg_amp_from_time_entry.get()),
+                                                              int(avg_amp_days_entry.get()), full_data_table,
+                                                              c_times, types_names, int(window_entry.get()))
+    print("average_amp: ", average_amp)
+    save_to_excel(average_amp, "average_amplitude")
+
+
+def cancel_action(root, previous_root):
+    """
+
+    :param root:
+    :param previous_root:
+    :return:
+    """
+    root.destroy()
+    previous_root.grab_release()
+
+
+def save_to_excel(data_to_write, filename):
+
+    # data_to_write has to be a dictionary
+    df = pd.DataFrame()
+    # Create a Pandas Excel writer using XlsxWriter as the engine.
+    writer = pd.ExcelWriter(filename+".xlsx", engine="xlsxwriter")
+    n = 0
+    for i, name in enumerate(types_names):
+        if filename == "amplitude_phase":
+            for key in data_to_write[name]:
+                df[name+" "+key] = data_to_write[name][key]
+                if n < len(df[name+" "+key]):
+                    n = len(df[name+" "+key])
+        else:
+            df[name] = data_to_write[name]
+            if n < len(df[name]):
+                n = len(df[name])
+
+    df.index = range(1, n + 1)
+
+    mean_value, std_value, se_value = core.calc_statistic_values(df, 0)  # TODO 0 for calc on cols
+
+    mean_value.name = "average"
+    std_value.name = "std"
+    se_value.name = "se"
+    df = df.append(mean_value)
+    df = df.append(std_value)
+    df = df.append(se_value)
+
+    print("df:  ", df)
+
+    # Convert the dataframe to an XlsxWriter Excel object.
+    df.to_excel(writer, sheet_name=filename)
+
+    # Close the Pandas Excel writer and output the Excel file.
+    writer.save()
+
+
+# TODO full_data_table is global but is not recognized here
+def export_raw_data(data_tables):
+    # Create a Pandas Excel writer using XlsxWriter as the engine.
+    writer = pd.ExcelWriter("raw_data.xlsx", engine="xlsxwriter")
+
+    for name in types_names:
+        mean_value, std_value, se_value = core.calc_statistic_values(data_tables[name], 1)
+        # add values to table
+        data_tables[name]["average"] = mean_value
+        data_tables[name]["std"] = std_value
+        data_tables[name]["s. error"] = se_value
+
+        # Convert the dataframe to an XlsxWriter Excel object.
+        data_tables[name].to_excel(writer, sheet_name=name)
+
+    # Close the Pandas Excel writer and output the Excel file.
+    writer.save()
+
+
+def break_amp_phase_to_dict(data):
+    """
+    convert to list of triplets inside every key to dictionary
+    :param data: as dictionary
+    :return:
+    """
+    full_dict = {}
+    for i, name in enumerate(types_names):
+        group_dict = {"amplitude": [data[name][i][0] for i in range(len(data[name]))]}  # TODO how to turn it to dict literal?
+        group_dict["phase"] = [data[name][i][1][0] for i in range(len(data[name]))]
+        group_dict["phase c.t."] = [data[name][i][1][1] for i in range(len(data[name]))]
+        full_dict[name] = group_dict  # pd.DataFrame.from_dict(group_dict)
+    return full_dict
+
+
+def enable_button(*args):
+    """
+
+    :param args:
+    :return:
+    """
+    print("in")
+    # a = brows_sv.get()
+    # b = plate_size_x_sv.get()
+    # c = plate_size_y_sv.get()
+    #
+    # if a and b and c and num_of_groups and types_names and samples_per_hour and sampling_intervals and total_days and \
+    #         start_time_hour and start_time_minutes:
+    #     next_button.config(state='normal')
+    # else:
+    #     next_button.config(state='disabled')
+
+
+def separate_time(time):
+
+    return time.split(":")
+
+
+def time_bin_minutes(lst):
+    h = 0
+    m = 1
+    s = 2
+
+    # TODO is 00:10:30 an option or it will be just one option filled?
+    if lst[s] == "00" and lst[h] == "00":
+        return int(lst[m])
+    elif lst[m] == "00" and lst[h] == "00":
+        return int(lst[s]) / MINUTES_PER_HOUR  # TODO may return float value, will everything work with float?
+
+
+def parse_excel_cols_names():
+
+    e_well_labels = excel_well_labels_sv.get()
+    e_time = excel_time_sv.get()
+    e_data = excel_data_sv.get()
+
+    if not e_well_labels.isdigit():
+        e_well_labels = ord(e_well_labels.lower()) % 32
+    else:
+        e_well_labels = int(e_well_labels)
+    if not e_time.isdigit():
+        e_time = ord(e_time.lower()) % 32
+    else:
+        e_time = int(e_time)
+    if not e_data.isdigit():
+        e_data = ord(e_data.lower()) % 32
+    else:
+        e_data = int(e_data)
+
+    # Indexing in excel columns start from zero
+    e_well_labels -= 1
+    e_time -= 1
+    e_data -= 1
+
+    return e_well_labels, e_time, e_data
+
+
+def set_global_values():
+    """
+
+    :return:
+    """
+
+    global num_of_groups, types_names, samples_per_hour, sampling_intervals, total_days, start_time_hour, \
+        start_time_minutes, start_time, excel_well_labels, excel_time, excel_data, none_to_num  #, total_num_of_values
+    # data from user input
+    num_of_groups = int(num_of_groups_sv.get())  # number of mutations and wt groups
+    types_names = separate_by_comma(types_names_sv.get())
+
+    sampling_intervals = int(time_bin_minutes(separate_time(sampling_intervals_sv.get())))  # in minutes
+    samples_per_hour = int(MINUTES_PER_HOUR / sampling_intervals)
+    total_days = int(total_days_sv.get())
+
+    excel_well_labels, excel_time, excel_data = parse_excel_cols_names()
+    none_to_num = int(check_ignore_sv.get())
+
+    start_time_separated = separate_time(start_time_sv.get())
+    start_time_hour = int(start_time_separated[0])
+    start_time_minutes = int(start_time_separated[1])
+
+    start_time_minutes += sampling_intervals
+    if start_time_minutes == MINUTES_PER_HOUR:
+        start_time_hour += 1
+        start_time_minutes = 0
+    if start_time_hour == HOURS_PER_DAY:
+        start_time_hour = 0
+
+    start_time = datetime(datetime.now().year, datetime.now().month, datetime.now().day, hour=int(start_time_hour),
+                          minute=int(start_time_minutes))
+
+    # total_num_of_values = int(MINUTES_PER_DAY / sampling_intervals * total_days)
 
 
 def main():
@@ -516,9 +651,9 @@ def main():
 
     top_frame = tk.Frame(master=root)
 
-    title = tk.Label(master=top_frame, text="Welcome to ... tool!", font=("Arial", 24, "bold"))
+    title = tk.Label(master=top_frame, text="Welcome to Amitool!", font=("Arial", 24, "bold"))
     title.pack(fill="x")
-    subtitle = tk.Label(master=top_frame, text="Tool for analysis of Zebrafish circadian rhythms", font=("Arial", 15))
+    subtitle = tk.Label(master=top_frame, text="Zebrafish Circadian Rhythms Analysis Tool", font=("Arial", 15))
     subtitle.pack(fill="x")
     top_frame.pack(fill="x")
 
@@ -530,11 +665,11 @@ def main():
     logo_label.pack(fill='x', pady=20)
 
     global browse_entry, plate_size_entry, plate_size_entry_2, num_of_groups_entry, types_names_entry, \
-        samples_per_hour_entry, sampling_intervals_entry, total_days_entry, start_time_hour_entry, \
-        start_time_minutes_entry, next_button
+        sampling_intervals_entry, total_days_entry, start_time_entry, next_button  # TODO check if can remove this
 
     global brows_sv, plate_size_x_sv, plate_size_y_sv, num_of_groups_sv, types_names_sv, samples_per_hour_sv, \
-        sampling_intervals_sv, total_days_sv, start_time_hour_sv, start_time_minutes_sv
+        sampling_intervals_sv, total_days_sv, start_time_sv, check_ignore_sv, excel_well_labels_sv, excel_time_sv, \
+        excel_data_sv
 
     # create a browse button and locate it
     browse_button = tk.Button(master=middle_frame, text="  Browse  ", bg='gainsboro',
@@ -566,53 +701,65 @@ def main():
     total_days_sv = tk.StringVar()
     total_days_sv.trace("w", enable_button)
 
-    start_time_hour_sv = tk.StringVar()
-    start_time_hour_sv.trace("w", enable_button)
+    start_time_sv = tk.StringVar()
+    start_time_sv.trace("w", enable_button)
 
-    start_time_minutes_sv = tk.StringVar()
-    start_time_minutes_sv.trace("w", enable_button)
+    check_ignore_sv = tk.StringVar()
+    check_ignore_sv.trace("w", enable_button)
+
+    excel_well_labels_sv = tk.StringVar()
+    excel_well_labels_sv.trace("w", enable_button)
+    excel_time_sv = tk.StringVar()
+    excel_time_sv.trace("w", enable_button)
+    excel_data_sv = tk.StringVar()
+    excel_data_sv.trace("w", enable_button)
 
     # create the widgets
     browse_entry = tk.Entry(master=middle_frame, bd=2, textvariable=brows_sv)
 
-    plate_size_label = tk.Label(master=middle_frame, text="Plate size: ")
+    plate_size_label = tk.Label(master=middle_frame, text="Plate size ")
+    plate_size_row_label = tk.Label(master=middle_frame, text="row ")
     plate_size_entry = tk.Entry(master=middle_frame, bd=2, width=5, textvariable=plate_size_x_sv)
-    plate_size_label_2 = tk.Label(master=middle_frame, text=" x ")
+    # plate_size_label_2 = tk.Label(master=middle_frame, text=" x ")
+    plate_size_col_label = tk.Label(master=middle_frame, text="column ")
     plate_size_entry_2 = tk.Entry(master=middle_frame, bd=2, width=5, textvariable=plate_size_y_sv)
 
-    num_of_groups_label = tk.Label(master=middle_frame, text="Number of groups: ")
+    num_of_groups_label = tk.Label(master=middle_frame, text="Number of groups ")
     num_of_groups_entry = tk.Entry(master=middle_frame, bd=2, textvariable=num_of_groups_sv)
 
-    types_names_label = tk.Label(master=middle_frame, text="Groups names: ")
+    types_names_label = tk.Label(master=middle_frame, text="Groups names (name1,name2,...) ")
     types_names_entry = tk.Entry(master=middle_frame, bd=2, textvariable=types_names_sv)
 
-    samples_per_hour_label = tk.Label(master=middle_frame, text="Samples per 1 hour: ")
-    samples_per_hour_entry = tk.Entry(master=middle_frame, bd=2, textvariable=samples_per_hour_sv)
-
-    sampling_intervals_label = tk.Label(master=middle_frame, text="Sampling intervals (in minutes): ")
+    sampling_intervals_label = tk.Label(master=middle_frame, text="Time bin (hh:mm:ss) ")
     sampling_intervals_entry = tk.Entry(master=middle_frame, bd=2, textvariable=sampling_intervals_sv)
 
     # ignore_nan_values = False
-    check_ignore_nan_iv = tk.IntVar()
-    check_ignore_cb = tk.Checkbutton(master=middle_frame, text="Set \'-\' values as \'0\'",
-                                     variable=check_ignore_nan_iv, onvalue=0, offvalue=1)
+    check_ignore_label = tk.Label(master=middle_frame, text="Set \'-\' values as ")
+    check_ignore_entry = tk.Entry(master=middle_frame, bd=2, width=5, textvariable=check_ignore_sv)
+    check_ignore_entry.insert(0, 0)
 
-    total_days_label = tk.Label(master=middle_frame, text="Total Number of days of experiment: ")
+    total_days_label = tk.Label(master=middle_frame, text="Total Number of days of experiment ")
     total_days_entry = tk.Entry(master=middle_frame, bd=2, textvariable=total_days_sv)
 
-    start_time_label = tk.Label(master=middle_frame, text="Start time: ")
-    start_time_hour_label = tk.Label(master=middle_frame, text="hour: ")
-    start_time_minutes_label = tk.Label(master=middle_frame, text=" minutes:           ")
+    start_time_label = tk.Label(master=middle_frame, text="Start time (hh:mm) ")
+    start_time_entry = tk.Entry(master=middle_frame, bd=2, textvariable=start_time_sv)
 
-    start_time_hour_entry = tk.Entry(master=middle_frame, bd=2, width=5, textvariable=start_time_hour_sv)
-    start_time_minutes_entry = tk.Entry(master=middle_frame, bd=2, width=5, textvariable=start_time_minutes_sv)
+    excel_cols_label = tk.Label(master=middle_frame, text="Relevant Excel columns ")
+    excel_well_label = tk.Label(master=middle_frame, text="Labels ")
+    excel_time_label = tk.Label(master=middle_frame, text="Time ")
+    excel_data_label = tk.Label(master=middle_frame, text="Data ")
+    excel_well_entry = tk.Entry(master=middle_frame, bd=2, width=5, textvariable=excel_well_labels_sv)
+    excel_time_entry = tk.Entry(master=middle_frame, bd=2, width=5, textvariable=excel_time_sv)
+    excel_data_entry = tk.Entry(master=middle_frame, bd=2, width=5, textvariable=excel_data_sv)
 
     # locate all widgets on screen
     browse_entry.grid(row=0, column=1, columnspan=2, sticky=tk.W, pady=2, ipadx=46)
     plate_size_label.grid(row=1, column=0, sticky=tk.E, pady=2)
-    plate_size_entry.grid(row=1, column=1, sticky=tk.W, pady=2)
-    plate_size_label_2.grid(row=1, column=1, pady=2)
-    plate_size_entry_2.grid(row=1, column=1, sticky=tk.E, pady=2)
+    plate_size_row_label.grid(row=1, column=1, sticky=tk.W, pady=2)
+    plate_size_entry.grid(row=1, column=1, pady=2)
+    # plate_size_label_2.grid(row=1, column=1, pady=2)
+    plate_size_col_label.grid(row=1, column=1, sticky=tk.E, pady=2)
+    plate_size_entry_2.grid(row=1, column=2, sticky=tk.W, pady=2)
     num_of_groups_label.grid(row=2, column=0, sticky=tk.E, pady=2)
     num_of_groups_entry.grid(row=2, column=1, pady=2)
 
@@ -620,13 +767,7 @@ def main():
     types_names_entry.grid(row=3, column=1, pady=2)
 
     start_time_label.grid(row=4, column=0, sticky=tk.E, pady=2)
-    start_time_hour_label.grid(row=4, column=1, sticky=tk.W, pady=2)
-    start_time_hour_entry.grid(row=4, column=1, pady=2)
-    start_time_minutes_label.grid(row=4, column=2, sticky=tk.W, padx=2, pady=2)
-    start_time_minutes_entry.grid(row=4, column=2, sticky=tk.E, pady=2)
-
-    samples_per_hour_label.grid(row=5, column=0, sticky=tk.E, pady=2)
-    samples_per_hour_entry.grid(row=5, column=1, pady=2)
+    start_time_entry.grid(row=4, column=1, pady=2)
 
     sampling_intervals_label.grid(row=6, column=0, sticky=tk.E, pady=2)
     sampling_intervals_entry.grid(row=6, column=1, pady=2)
@@ -634,46 +775,83 @@ def main():
     total_days_label.grid(row=7, column=0, sticky=tk.E, pady=2)
     total_days_entry.grid(row=7, column=1, pady=2)
 
-    check_ignore_cb.select()
-    check_ignore_cb.grid(row=8, column=0, columnspan=3)
+    check_ignore_label.grid(row=8, column=0, sticky=tk.E, pady=2)
+    check_ignore_entry.grid(row=8, column=1, pady=2)
+
+    excel_cols_label.grid(row=9, column=0, sticky=tk.E, pady=2)
+    excel_well_label.grid(row=9, column=1, sticky=tk.W, pady=2)
+    excel_time_label.grid(row=10, column=1, sticky=tk.W, pady=2)
+    excel_data_label.grid(row=11, column=1, sticky=tk.W, pady=2)
+    excel_well_entry.grid(row=9, column=1, pady=2)
+    excel_time_entry.grid(row=10, column=1,pady=2)
+    excel_data_entry.grid(row=11, column=1, pady=2)
 
     middle_frame.pack(fill="x")  # (expand=True)
 
     bottom_frame = tk.Frame(root)
 
-    next_button = tk.Button(master=bottom_frame, text="  Next  ", font=14, bg='gainsboro', state='disabled',
+    next_button = tk.Button(master=bottom_frame, text="  Next  ", font=14, bg='gainsboro',# state='disabled',
                             command=lambda: select_groups_screen(root))
     next_button.grid(ipadx=10, pady=10)
 
     bottom_frame.pack(fill="x", side=tk.BOTTOM)
-    bottom_frame.place(relx=0.5, rely=0.9, anchor=tk.CENTER)
+    bottom_frame.place(relx=0.5, rely=0.95, anchor=tk.CENTER)
 
     root.mainloop()
 
 
 if __name__ == "__main__":
 
-    # xls_to_csv("Analysis", "files/csv_file.csv")
-    DF = parse_input("C:/Users/Amit/PycharmProjects/lab_project_repo/LabProject/files/csv_file.csv")
+    # xls_to_csv(input_file_path, "Analysis", "files/csv_file.csv")
+    # DF = parse_input("C:/Users/Amit/PycharmProjects/lab_project_repo/LabProject/files/csv_file.csv")
 
+    # core.clustering.cluster()
     # TODO calc_statistic_values(tables_dict[types_names[i]])
-    # graph_data()
-    # print(f)
 
-    main()
-    # calculate_activity_patterns(DF['WT'], "amplitude_phase")
-    # print(groups_calculation("amplitude_phase"))
-
-    ### run mean amplitude of one group ###
-    # ct_list = circadian_time_list(sampling_intervals, total_days)
-    # window_s = 20
-    # ct_list = ct_list[int(window_s/2): - int(window_s/2)]
+    # # fake up some data
+    # spread = np.random.rand(50) * 100
+    # center = np.ones(25) * 50
+    # flier_high = np.random.rand(10) * 100 + 100
+    # flier_low = np.random.rand(10) * -100
+    # data = np.concatenate((spread, center, flier_high, flier_low), 0)
     #
-    # data = smooth_group_data(DF["WT"], window_s)
+    # # fake up some more data
+    # spread = np.random.rand(50) * 100
+    # center = np.ones(25) * 40
+    # flier_high = np.random.rand(10) * 100 + 100
+    # flier_low = np.random.rand(10) * -100
+    # d2 = np.concatenate((spread, center, flier_high, flier_low), 0)
+    # data.shape = (-1, 1)
+    # d2.shape = (-1, 1)
+    # # data = concatenate( (data, d2), 1 )
+    # # Making a 2-D array only works if all the columns are the
+    # # same length.  If they are not, then use a list instead.
+    # # This is actually more efficient because boxplot converts
+    # # a 2-D array into a list of vectors internally anyway.
+    # data = [data, d2, d2[::2, 0]]
+    # # multiple box plots on one figure
+    data = [[0.38, 0.37, 0.35, 0.41, 0.4, 0.42, 0.29, 0.19, 0.01, 0.19, 0.43, 0.26, 0.36, 0.34, 0.35, 0.37, 0.12, 0.31,
+            0.2, 0.26, 0.26, 0.15, 0.23, 0.19], [0.08, 0.08, 0.05, 0.11, 0.06, 0.15, 0.05, 0.09, 0.05, 0.18, 0.26, 0.16,
+                                                 0.06, 0.04, 0.11, 0.01, 0.13, 0.22, 0.29, 0.21, 0.01, 0.07, 0.2, 0.06]]
+    # plt.figure()
+    # plt.boxplot(data, sym="*")
+    # plt.scatter(data[0], range(24))
     #
-    # print(amplitude_phase.average_amplitude(float(12), float(36), data, ct_list))
-    ####################################
+
+    plt.figure()
+
+    bp = plt.boxplot(data)
+
+    for i in range(2):
+        y = data[i]
+        print("y: ", y)
+        x = np.random.normal(1+i, 0, size=len(y))
+        print("x: ", x)
+        plt.xticks([1, 2], ["A", "B"])
+        plt.plot(x, y, 'b.', alpha=0.6)
+
+    plt.show()
+    # main()
 
 
-    # print(clustering.cluster(data))
 
