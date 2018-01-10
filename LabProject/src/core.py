@@ -182,7 +182,6 @@ def calculate_activity_patterns(data_table, method, start_time, total_days, samp
             value = None
         values.append(value)
 
-    print("all_larvas_values: ", values)
     return values
 
 
@@ -214,7 +213,7 @@ def graph_data(sampling_intervals, total_days, types_names, DF, samples_per_hour
     ct = [float("%.2f" % elem) for elem in ct]
 
     plt.clf()  # clears the entire current figure
-    fig, a = plt.subplots()
+    fig, a = plt.subplots(frameon=False)
 
     for name in types_names:
         # calc mean values of each row in the table
@@ -247,85 +246,125 @@ def groups_calculation(method, types_names, DF, num_of_groups, start_time, total
                                              ignore_part_beg, ignore_part_end, samples_per_hour)
         groups_calc_values[name] = values
 
-    # manage_statistic_tests(method, groups_calc_values, groups_amps_values, groups_phase_values, num_of_groups,
-    # types_names)
-
     return groups_calc_values
 
 
-def plot_results_graph(results, group_names, method):
-    fig, ax = plt.subplots()
+def period_results_graph(results, group_names, method):
 
+    fig = plt.figure(frameon=False)
     mean_value, std_value, se_value = calc_statistic_values(pd.DataFrame.from_dict(results), 0)  # TODO 0 for calc on cols
     print("mean_value: ", mean_value)
-    print("se_value: ", type(se_value))
     mean_value = list(mean_value)
     se_value = list(se_value)
     print("mean_value: ", mean_value)
     print("se_value: ", se_value)
-    ind = np.arange(len(group_names))    # the x locations for the groups
-    width = 0.35       # the width of the bars: can also be len(x) sequence
 
-    rects = ax.bar(ind, mean_value, width, yerr=se_value)
-
+    width = 0.5       # the width of the bars: can also be len(x) sequence
+    y_pos = np.arange(len(group_names))
+    plt.bar(y_pos, mean_value, align="center", width=width, yerr=se_value)
     plt.ylabel(method)
-    plt.title("---------")
-    plt.xticks(ind, group_names)
-    # plt.legend((p1[0], p2[0]), ('Men', 'Women'))
-    autolabel(rects, ax)
-    plt.show()
+    plt.title(method)
+    plt.xticks(y_pos, group_names)
+
+    plt.savefig(method + " results graph")
+    return fig
 
 
-def autolabel(rects, ax):
+def g_factor_results_graph(data_to_pres, group_names, action):
+    fig = plt.figure(frameon=False)
+
+    data_as_list = [value for value in data_to_pres.values()]
+    bp = plt.boxplot(data_as_list, zorder=0, showcaps=False, showbox=False, labels=group_names,
+                     medianprops={"color": "b", "linewidth": 2})
+
+    for i in range(len(group_names)):
+        y = data_as_list[i]
+        x = np.random.normal(1+i, 0, size=len(y))
+        plt.plot(x, y, 'k.', alpha=1)
+    plt.ylabel(action)
+    plt.title(action)
+    plt.savefig("g factor results graph")
+    return fig
+
+
+def amp_phase_results_graph(results, group_names, method, title):
+
+    fig = plt.figure(figsize=(8, 4.8), dpi=100, frameon=False)
+
+    amplitude_results = {key: results[key]["amplitude"] for key in results}
+    phase_results = {key: results[key]["phase c.t."] for key in results}
+
+    amp_mean, amp_std, amp_se = calc_statistic_values(pd.DataFrame.from_dict(amplitude_results), 0)
+    print("amp_mean: ", amp_mean)
+    amp_mean = list(amp_mean)
+    amp_se = list(amp_se)
+    print("amp_mean: ", amp_mean)
+    print("amp_se: ", amp_se)
+
+    phase_mean, phase_std, phase_se = calc_statistic_values(pd.DataFrame.from_dict(phase_results), 0)
+    print("phase_mean: ", phase_mean)
+    phase_mean = list(phase_mean)
+    phase_se = list(phase_se)
+    print("phase_mean: ", phase_mean)
+    print("phase_se: ", phase_se)
+
+    width = 0.5       # the width of the bars: can also be len(x) sequence
+    y_pos = np.arange(len(group_names))
+
+    plt.subplot(121)
+    plt.bar(y_pos, amp_mean, align="center", width=width, yerr=amp_se)
+    plt.ylabel("Average amplitude")
+    # plt.title("Average amplitude and standard error per experimental group")
+    plt.xticks(y_pos, group_names)
+
+    plt.subplot(122)
+    plt.bar(y_pos, phase_mean, align="center", width=width, yerr=phase_se)
+    plt.ylabel("Average phase")
+    # plt.title("Average phase and standard error per experimental group")
+    plt.xticks(y_pos, group_names)
+
+    plt.savefig("amplitude & phase results graph")
+    return fig
+
+
+def f(t):
+    return np.exp(-t) * np.cos(2*np.pi*t)
+
+
+def manage_statistic_tests(groups, method, group_names):
     """
-    Attach a text label above each bar displaying its height
+    Run statistic test for every two groups
+    :param groups: dictionary with groups results values. key - group name, value - list of group values
+    :param method:
+    :param group_names:
+    :return:
     """
-    for rect in rects:
-        height = rect.get_height()
-        ax.text(rect.get_x() + rect.get_width()/2., 1.05*height, "%.2f" % int(height), ha='center', va='bottom')
+    print("method ", method)
+    num_of_groups = len(group_names)
+    p_values = {}
+    for i in range(num_of_groups):
+        for j in range(i+1, num_of_groups):
+            statistic, p_value = statistic_tests(groups[group_names[i]], groups[group_names[j]], method)
+            p_values[(group_names[i], group_names[j])] = p_value
+    print("p_value dict  :", p_values)
+    return p_values
 
 
+def statistic_tests(group1, group2, method):
+    """
+    take a statistic test between the two groups according to the method used
+    :param group1:
+    :param group2:
+    :param method:
+    :return:
+    """
 
-# def manage_statistic_tests(method, groups_values, groups_amps_values, groups_phase_values, num_of_groups,
-# types_names): ### TODO ###
-#
-#     if num_of_groups > 2:
-#         statistic_anova_test(groups_values, groups_amps_values, groups_phase_values)
-#     else:
-#         type1 = types_names[0]
-#         type2 = types_names[1]
-#         if method == "amplitude_phase":
-#             statistic, p_value = statistic_tests(groups_amps_values[type1][0], groups_amps_values[type2][0], method)
-#             print("statistic amp: ", statistic, "p_value amp: ", p_value)
-#             statistic, p_value = statistic_tests(groups_phase_values[type1][0], groups_phase_values[type2][0], method)
-#             print("statistic phase: ", statistic, "p_value phase: ", p_value)
-#         else:
-#             statistic, p_value = statistic_tests(groups_values[type1][0], groups_values[type2][0], method)
-#             print("statistic: ", statistic, "p_value: ", p_value)
+    statistic = p_value = 0
+    if method == "g_factor":
+        statistic, p_value = g_factor.g_factor_significant(group1, group2)
+        print("          g factor statistic, p_value ", statistic, p_value)
+    else:
+        statistic, p_value = stats.ttest_ind(group1, group2)
 
-
-# def statistic_anova_test(groups_values, groups_amps_values, groups_phase_values):
-#     stats.f_oneway()
-#     # TODO see how to send all the lists in the same time
-#     statistic = p_value = 0
-#
-#     return statistic, p_value
-
-
-# def statistic_tests(group1, group2, method):
-#     """
-#     take a statistic test between the two groups according to the method used
-#     :param group1:
-#     :param group2:
-#     :param method:
-#     :return:
-#     """
-#
-#     statistic = p_value = 0
-#     if method == "fourier" or method == "chi_square" or method == "amplitude_phase":
-#         statistic, p_value = stats.ttest_ind(group1, group2)
-#     elif method == "g_factor":
-#         statistic, p_value = g_factor.g_factor_significant(group1, group2)
-#
-#     return statistic, p_value
+    return statistic, p_value
 

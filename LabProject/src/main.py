@@ -4,6 +4,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from tkinter import filedialog
 from tkinter import ttk
 
+import ast
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -20,6 +21,7 @@ MINUTES_PER_HOUR = 60
 MINUTES_PER_DAY = 1440
 
 style.use("ggplot")
+# style.use("seaborn-dark")
 
 
 # GUI and GUI-related functions:
@@ -37,7 +39,8 @@ def select_input_file():
 
 def plate_table(master, rows, cols):
     """
-
+    Create a table of entries with the size and shape of the experiment plate so the user can mark every cell in which
+    group it belongs to
     :param master:
     :param rows:
     :param cols:
@@ -122,21 +125,12 @@ def is_groups_table_full(plate_values):
     return True
 
 
-def separate_by_comma(text):
-    """
-
-    :param text:
-    :return:
-    """
-    return text.split(",")
-
-
 def separate_names_to_show():
     """
-    create a string of groups and groups number to show for easier group selection
+    create labels of groups and groups numbers to show for easier group selection
     :return:
     """
-    names = separate_by_comma(types_names_entry.get())
+    names = types_names_entry.get().split(",")
     names_str = ""
     for i, name in enumerate(names):
         names_str += str(i) + " - " + name + "  \n"
@@ -168,7 +162,7 @@ def show_previous_screen(curr_root, previous_root):
 
 def submit_data(previous_root, plate_values):
     """
-
+    after selecting the groups, parse the input file
     :param previous_root:
     :param plate_values:
     :return:
@@ -227,7 +221,7 @@ def separate_by_group(table_vals):
 
 def choose_calculation_screen(previous_root):
     """
-
+    create a screen with the calculation options for the user to choose
     :param previous_root:
     :return:
     """
@@ -249,11 +243,11 @@ def choose_calculation_screen(previous_root):
     bottom_frame = tk.Frame(root)
 
     period_btn = tk.Button(master=bottom_frame, text="  Calculate Period  ", bg='gainsboro',
-                           command=lambda: period_settings_popup(root, "period"))
+                           command=lambda: period_g_settings_popup(root, "period"))
     period_btn.grid(ipadx=5, padx=5, pady=3)
 
     g_factor_btn = tk.Button(master=bottom_frame, text="  Calculate G factor  ", bg='gainsboro',
-                             command=lambda: period_settings_popup(root, "g_factor"))
+                             command=lambda: period_g_settings_popup(root, "g_factor"))
     g_factor_btn.grid(ipadx=5, padx=5, pady=3)
 
     amplitude_btn = tk.Button(master=bottom_frame, text="  Calculate Amplitude & Phase  ", bg='gainsboro',
@@ -275,7 +269,7 @@ def choose_calculation_screen(previous_root):
     root.mainloop()
 
 
-def period_settings_popup(previous_root, action):
+def period_g_settings_popup(previous_root, action):
     """
 
     :param previous_root:
@@ -339,7 +333,8 @@ def period_settings_popup(previous_root, action):
                                                                                               previous_root))
     cancel_btn.grid(row=4, column=0, columnspan=2, pady=10)
 
-    calculate_btn = tk.Button(master=top_frame, text="  Calculate  ", command=lambda: calc_action(action, box.get()))
+    calculate_btn = tk.Button(master=top_frame, text="  Calculate  ", command=lambda: calc_action(period_settings,
+                                                                                                  action, box.get()))
     calculate_btn.grid(row=4, column=2, columnspan=2, pady=10)
 
     top_frame.pack()
@@ -381,7 +376,8 @@ def amplitude_settings_popup(previous_root, action):
     amp_to_day_label = tk.Label(master=top_frame, text="hours ")
     amp_to_day_label.grid(row=1, column=2, pady=3)
 
-    calculate_btn = tk.Button(master=top_frame, text="  Calculate  ", command=lambda: calc_action(action, None))
+    calculate_btn = tk.Button(master=top_frame, text="  Calculate  ", command=lambda: calc_action(amplitude_settings,
+                                                                                                  action, None))
     calculate_btn.grid(row=2, column=2, columnspan=3, pady=10)
 
     days_label = tk.Label(master=top_frame, text="For average amplitude calculate from ")
@@ -404,16 +400,17 @@ def amplitude_settings_popup(previous_root, action):
     cancel_btn.grid(row=4, column=0, columnspan=2, pady=10)
 
     average_amp_calculate_btn = tk.Button(master=top_frame, text="  Calculate average amplitude   ",
-                                          command=lambda: average_amp_calc_action())
+                                          command=lambda: average_amp_calc_action(amplitude_settings))
     average_amp_calculate_btn.grid(row=4, column=2, columnspan=3, pady=10)
 
     top_frame.pack()
     amplitude_settings.mainloop()
 
 
-def calc_action(action, method_type):
+def calc_action(previous_root, action, method_type):
     """
 
+    :param previous_root:
     :param action:
     :param method_type:
     :return:
@@ -443,14 +440,19 @@ def calc_action(action, method_type):
                                              total_days, sampling_intervals, ignore_part_beg, ignore_part_end,
                                              samples_per_hour)
     print("results_values:   ", results_values)
-    core.plot_results_graph(results_values, types_names, action)
-    if action == "amplitude_phase":
+
+    if action == "fourier" or action == "chi_square":
+        # period_results_screen(previous_root, results_values, action, core.period_results_graph, "  T-test  ")
+        results_screen(previous_root, results_values, action, "core.period_results_graph", "  T-test  ")
+    elif action == "amplitude_phase":
         results_values = break_amp_phase_to_dict(results_values)
-        print("temp amplitude_phase:   ", results_values)
-    save_to_excel(results_values, action)
+        amp_phase_results_screen(previous_root, results_values, action)
+    elif action == "g_factor":
+        # g_factor_results_screen(previous_root, results_values, action)
+        results_screen(previous_root, results_values, action, "core.g_factor_results_graph", "  KS-test  ")
 
 
-def average_amp_calc_action():
+def average_amp_calc_action(previous_root):
 
     print("in average_amp_calc_action")
     c_times = core.circadian_time_list(sampling_intervals, total_days)
@@ -458,7 +460,8 @@ def average_amp_calc_action():
                                                               int(avg_amp_days_entry.get()), full_data_table,
                                                               c_times, types_names, int(window_entry.get()))
     print("average_amp: ", average_amp)
-    save_to_excel(average_amp, "average_amplitude")
+
+    results_screen(previous_root, average_amp, "average_amplitude", "core.period_results_graph", "  T-test  ")
 
 
 def cancel_action(root, previous_root):
@@ -472,39 +475,152 @@ def cancel_action(root, previous_root):
     previous_root.grab_release()
 
 
-def save_to_excel(data_to_write, filename):
+def eval_text_entry(entry_str):
+    if not entry_str:
+        return None
+    else:
+            return ast.literal_eval(entry_str)
+
+
+def groups_stat_tests_call(entry, results_values, action):
+
+    p_values = core.manage_statistic_tests(results_values, action, types_names)
+    entry.configure(state=tk.NORMAL)
+    entry.delete(0, tk.END)
+    entry.insert(tk.INSERT, str(p_values))
+    entry.configure(state="readonly")
+
+
+def results_screen(previous_root, results_values, action, func_name, btn_name):
+
+    # previous_root.destroy()
+    root = tk.Tk()
+    root.geometry("640x580")
+    root.resizable(height=False, width=False)
+
+    top_frame = tk.Frame(root)
+    # create graph of results
+    # fig = core.period_results_graph(results_values, types_names, action)
+    fig = eval(func_name)(results_values, types_names, action)
+    canvas = FigureCanvasTkAgg(fig, master=top_frame)
+    canvas.show()
+    canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+    top_frame.pack()
+
+    bottom_frame = tk.Frame(root)
+
+    test_score = tk.Entry(master=bottom_frame, width=30)
+    test_score.grid(row=0, column=1, ipadx=5, padx=5, pady=3)
+    test_score.configure(state="readonly")
+
+    test_btn = tk.Button(master=bottom_frame, text=btn_name, bg='gainsboro',
+                         command=lambda: groups_stat_tests_call(test_score, results_values, action))
+    test_btn.grid(row=0, column=0, ipadx=5, padx=5, pady=3)
+
+    export_btn = tk.Button(master=bottom_frame, text="  Export results  ", bg='gainsboro',
+                           command=lambda: save_to_excel(results_values, action, eval_text_entry(test_score.get())))
+    export_btn.grid(ipadx=5, padx=5, pady=3, columnspan=2)
+
+    bottom_frame.pack()
+    root.mainloop()
+
+
+def amp_phase_results_screen(previous_root, results_values, action):
+
+    # previous_root.destroy()
+    root = tk.Tk()
+    root.geometry("800x580")
+    root.resizable(height=False, width=False)
+
+    top_frame = tk.Frame(root)
+    # create graph of results
+    fig = core.amp_phase_results_graph(results_values, types_names, action, action)
+    canvas = FigureCanvasTkAgg(fig, master=top_frame)
+    canvas.show()
+    canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+    top_frame.pack()
+
+    bottom_frame = tk.Frame(root)
+
+    amplitude_results = {key: results_values[key]["amplitude"] for key in results_values}
+    phase_results = {key: results_values[key]["phase c.t."] for key in results_values}
+    full_phase_results = results_values
+    for key in full_phase_results.keys():
+        del full_phase_results[key]["amplitude"]
+
+    amp_ttest_score = tk.Entry(master=bottom_frame, width=30)
+    amp_ttest_score.grid(row=0, column=1, ipadx=5, padx=5, pady=3)
+    amp_ttest_score.configure(state="readonly")
+
+    phase_ttest_score = tk.Entry(master=bottom_frame, width=30)
+    phase_ttest_score.grid(row=0, column=3, ipadx=5, padx=5, pady=3)
+    phase_ttest_score.configure(state="readonly")
+
+    amp_ttest_btn = tk.Button(master=bottom_frame, text="  Amplitude T-test  ", bg='gainsboro',
+                              command=lambda: groups_stat_tests_call(amp_ttest_score, amplitude_results, action))
+    amp_ttest_btn.grid(row=0, column=0, ipadx=5, padx=5, pady=3)
+
+    phase_ttest_btn = tk.Button(master=bottom_frame, text="  Phase T-test  ", bg='gainsboro',
+                                command=lambda: groups_stat_tests_call(phase_ttest_score, phase_results, action))
+    phase_ttest_btn.grid(row=0, column=2, ipadx=5, padx=5, pady=3)
+
+    amp_export_btn = tk.Button(master=bottom_frame, text="  Export amplitude results  ", bg='gainsboro',
+                               command=lambda: save_to_excel(amplitude_results, "amplitude",
+                                                             eval_text_entry(amp_ttest_score.get())))
+    amp_export_btn.grid(row=1, column=0, ipadx=5, padx=5, pady=3, columnspan=2)
+
+    phase_export_btn = tk.Button(master=bottom_frame, text="  Export phase results  ", bg='gainsboro',
+                                 command=lambda: save_to_excel(full_phase_results, "phase",
+                                                               eval_text_entry(phase_ttest_score.get())))
+    phase_export_btn.grid(row=1, column=2, ipadx=5, padx=5, pady=3, columnspan=2)
+
+    bottom_frame.pack()
+    root.mainloop()
+
+
+def save_to_excel(data_to_write, filename, p_values_d):
 
     # data_to_write has to be a dictionary
-    df = pd.DataFrame()
+    results_df_for_export = pd.DataFrame()
     # Create a Pandas Excel writer using XlsxWriter as the engine.
     writer = pd.ExcelWriter(filename+".xlsx", engine="xlsxwriter")
     n = 0
     for i, name in enumerate(types_names):
-        if filename == "amplitude_phase":
+        if filename == "phase":
             for key in data_to_write[name]:
-                df[name+" "+key] = data_to_write[name][key]
-                if n < len(df[name+" "+key]):
-                    n = len(df[name+" "+key])
+                results_df_for_export[name+" "+key] = data_to_write[name][key]
+                if n < len(results_df_for_export[name+" "+key]):
+                    n = len(results_df_for_export[name+" "+key])
         else:
-            df[name] = data_to_write[name]
-            if n < len(df[name]):
-                n = len(df[name])
+            results_df_for_export[name] = data_to_write[name]
+            if n < len(results_df_for_export[name]):
+                n = len(results_df_for_export[name])
 
-    df.index = range(1, n + 1)
+    # Change the index numbers (rows names) to start from 1 and not from 0 as in default
+    results_df_for_export.index = range(1, n + 1)
 
-    mean_value, std_value, se_value = core.calc_statistic_values(df, 0)  # TODO 0 for calc on cols
+    mean_value, std_value, se_value = core.calc_statistic_values(results_df_for_export, 0)  # TODO 0 for calc on cols
+    print("mean_value: ", mean_value)
+    print("mean_value type: ", type(mean_value))
 
     mean_value.name = "average"
     std_value.name = "std"
     se_value.name = "se"
-    df = df.append(mean_value)
-    df = df.append(std_value)
-    df = df.append(se_value)
+    results_df_for_export = results_df_for_export.append(mean_value)
+    results_df_for_export = results_df_for_export.append(std_value)
+    results_df_for_export = results_df_for_export.append(se_value)
+    if p_values_d is not None:
+        p_value_df = pd.DataFrame(list(p_values_d.items()))
+        p_value_df.index = ["p value"] * len(p_values_d)
 
-    print("df:  ", df)
+        results_df_for_export = results_df_for_export.append(p_value_df)
+
+    print("df:  ", results_df_for_export)
 
     # Convert the dataframe to an XlsxWriter Excel object.
-    df.to_excel(writer, sheet_name=filename)
+    results_df_for_export.to_excel(writer, sheet_name=filename)
 
     # Close the Pandas Excel writer and output the Excel file.
     writer.save()
@@ -616,7 +732,7 @@ def set_global_values():
         start_time_minutes, start_time, excel_well_labels, excel_time, excel_data, none_to_num  #, total_num_of_values
     # data from user input
     num_of_groups = int(num_of_groups_sv.get())  # number of mutations and wt groups
-    types_names = separate_by_comma(types_names_sv.get())
+    types_names = types_names_sv.get().split(",")
 
     sampling_intervals = int(time_bin_minutes(separate_time(sampling_intervals_sv.get())))  # in minutes
     samples_per_hour = int(MINUTES_PER_HOUR / sampling_intervals)
@@ -659,7 +775,7 @@ def main():
 
     middle_frame = tk.Frame(root)
 
-    logo = tk.PhotoImage(file="sand-time.gif")
+    logo = tk.PhotoImage(file="Yoav_lab.gif")
     logo_label = tk.Label(master=top_frame, image=logo, justify='center')
     logo_label.image = logo
     logo_label.pack(fill='x', pady=20)
@@ -805,53 +921,8 @@ if __name__ == "__main__":
     # xls_to_csv(input_file_path, "Analysis", "files/csv_file.csv")
     # DF = parse_input("C:/Users/Amit/PycharmProjects/lab_project_repo/LabProject/files/csv_file.csv")
 
-    # core.clustering.cluster()
-    # TODO calc_statistic_values(tables_dict[types_names[i]])
 
-    # # fake up some data
-    # spread = np.random.rand(50) * 100
-    # center = np.ones(25) * 50
-    # flier_high = np.random.rand(10) * 100 + 100
-    # flier_low = np.random.rand(10) * -100
-    # data = np.concatenate((spread, center, flier_high, flier_low), 0)
-    #
-    # # fake up some more data
-    # spread = np.random.rand(50) * 100
-    # center = np.ones(25) * 40
-    # flier_high = np.random.rand(10) * 100 + 100
-    # flier_low = np.random.rand(10) * -100
-    # d2 = np.concatenate((spread, center, flier_high, flier_low), 0)
-    # data.shape = (-1, 1)
-    # d2.shape = (-1, 1)
-    # # data = concatenate( (data, d2), 1 )
-    # # Making a 2-D array only works if all the columns are the
-    # # same length.  If they are not, then use a list instead.
-    # # This is actually more efficient because boxplot converts
-    # # a 2-D array into a list of vectors internally anyway.
-    # data = [data, d2, d2[::2, 0]]
-    # # multiple box plots on one figure
-    data = [[0.38, 0.37, 0.35, 0.41, 0.4, 0.42, 0.29, 0.19, 0.01, 0.19, 0.43, 0.26, 0.36, 0.34, 0.35, 0.37, 0.12, 0.31,
-            0.2, 0.26, 0.26, 0.15, 0.23, 0.19], [0.08, 0.08, 0.05, 0.11, 0.06, 0.15, 0.05, 0.09, 0.05, 0.18, 0.26, 0.16,
-                                                 0.06, 0.04, 0.11, 0.01, 0.13, 0.22, 0.29, 0.21, 0.01, 0.07, 0.2, 0.06]]
-    # plt.figure()
-    # plt.boxplot(data, sym="*")
-    # plt.scatter(data[0], range(24))
-    #
-
-    plt.figure()
-
-    bp = plt.boxplot(data)
-
-    for i in range(2):
-        y = data[i]
-        print("y: ", y)
-        x = np.random.normal(1+i, 0, size=len(y))
-        print("x: ", x)
-        plt.xticks([1, 2], ["A", "B"])
-        plt.plot(x, y, 'b.', alpha=0.6)
-
-    plt.show()
-    # main()
+    main()
 
 
 
