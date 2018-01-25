@@ -31,7 +31,6 @@ def g_factor_calculation(larva_measurements_vec, number_of_days, samples_per_hou
 
 
 # same as python range but for floats too
-# TODO can be replaced by np.arrange???
 def frange(start, stop, span):
     """
     same as python range but for floats

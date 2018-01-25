@@ -1,13 +1,13 @@
 from datetime import datetime, timedelta
 from matplotlib import style
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from tkinter import filedialog
-from tkinter import ttk
+from tkinter import filedialog, ttk, messagebox
 
 import ast
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import re
 # from scipy import stats
 import string
 import tkinter as tk
@@ -22,7 +22,7 @@ MINUTES_PER_DAY = 1440
 
 style.use("ggplot")
 # style.use("seaborn-dark")
-
+# style.use("bmh")
 
 # GUI and GUI-related functions:
 
@@ -34,7 +34,7 @@ def select_input_file():
     """
     global input_file_path
     input_file_path = filedialog.askopenfile().name
-    browse_entry.insert(0, input_file_path)
+    brows_sv.set(input_file_path)
 
 
 def plate_table(master, rows, cols):
@@ -77,12 +77,10 @@ def select_groups_screen(previous_root):
     root.geometry("425x600")
     root.resizable(height=False, width=False)
 
-    set_global_values()
-
     top_frame = tk.Frame(root)
     select_groups_label = tk.Label(master=top_frame, font=14,
                                    text="Please write in every cell the number of group it belongs to ", pady=20)
-    names_label = tk.Label(master=top_frame, text=separate_names_to_show())
+    names_label = tk.Label(master=top_frame, font=14, text=separate_names_to_show())
 
     select_groups_label.pack()
     names_label.pack()
@@ -93,13 +91,20 @@ def select_groups_screen(previous_root):
     plate_table_values = plate_table(table_frame, int(plate_size_entry.get()), int(plate_size_entry_2.get()))
     table_frame.pack(expand=True)
 
+    loading_frame = tk.Frame(root)
+
+    wait_label = tk.Label(master=loading_frame, font=("Arial", 14, "bold"), foreground="red")
+    wait_label.grid(pady=20)
+
+    loading_frame.pack(expand=True)
+
     bottom_frame = tk.Frame(root)
 
-    submit_button = tk.Button(master=bottom_frame, text="  Submit  ", bg='gainsboro',
-                              command=lambda: submit_data(root, plate_table_values))
+    submit_button = tk.Button(master=bottom_frame, text="  Submit  ", bg="gainsboro",
+                              command=lambda: submit_data(root, plate_table_values, wait_label))
     submit_button.grid(ipadx=5, padx=5, pady=2)
 
-    back_button = tk.Button(master=bottom_frame, text="  Back  ", bg='gainsboro',
+    back_button = tk.Button(master=bottom_frame, text="  Back  ", bg="gainsboro",
                             command=lambda: show_previous_screen(root, previous_root))
     back_button.grid(ipadx=5, padx=5, pady=2)
 
@@ -108,7 +113,7 @@ def select_groups_screen(previous_root):
     # root.mainloop()
 
 
-def is_groups_table_full(plate_values):
+def is_groups_table_valid(plate_values):
     """
     checks if all entries in the select groups screen are filled
     :param plate_values:
@@ -119,8 +124,16 @@ def is_groups_table_full(plate_values):
 
     for r in range(row):
         for c in range(col):
-            if not plate_values[r][c].get():
-                print("empty")
+            cell_val = plate_values[r][c].get()
+            if not cell_val:
+                messagebox.showinfo("Error", "The table is not full")
+                return False
+            elif not cell_val.isdigit():
+                messagebox.showinfo("Error", "Value in cell number (%d, %d) is not a number" % (r+1, c+1))
+                return False
+            elif int(cell_val) >= num_of_groups:
+                messagebox.showinfo("Error", "Cell number (%d, %d) has an invalid input. \nValue needs to be a number "
+                                             "between 0 to %d" % (r+1, c+1, num_of_groups-1))
                 return False
     return True
 
@@ -149,40 +162,68 @@ def show_previous_screen(curr_root, previous_root):
     curr_root.destroy()
 
 
-# def validate_user_input():
-#     """
-#
-#     :return:
-#     """
-#     print("validate")
-#     # make sure that number values are really numbers
-#     # TODO check that all is filled in second screen
-#     # TODO check that everything is legal
+def clicked_next(previous_root):
+
+    group_names_pattern = "([^:|,]+)(,([^:|,]+))+"  # TODO make sure always work correctly
+    start_time_pattern = "(?:[01]\d|2[0123]):(?:[012345]\d)"
+    time_bin_pattern = "(?:[01]\d|2[0123]):(?:[012345]\d):(?:[012345]\d)"
+
+    if not plate_size_x_sv.get().isdigit() or not plate_size_y_sv.get().isdigit() or not num_of_groups_sv.get().isdigit() \
+       or not check_ignore_sv.get().isdigit():
+        tk.messagebox.showinfo("Error", "Input is not a number")
+        return
+    if (int(plate_size_x_sv.get()) * int(plate_size_y_sv.get())) > 96:  # TODO is the calculation correct?
+        tk.messagebox.showinfo("Error", "Plate size is not valid (??)")
+        return
+    if not re.match(group_names_pattern, types_names_sv.get(), flags=0):
+        tk.messagebox.showinfo("Error", "Group names's input is not in the right format")
+        return
+    if not re.match(start_time_pattern, start_time_sv.get(), flags=0):
+        tk.messagebox.showinfo("Error", "Start time has an invalid input")
+        return
+    if not re.match(time_bin_pattern, sampling_intervals_sv.get(), flags=0):
+        tk.messagebox.showinfo("Error", "Time bin has an invalid input")
+        return
+
+    set_global_values()
+    select_groups_screen(previous_root)
 
 
-def submit_data(previous_root, plate_values):
+def submit_data(previous_root, plate_values, wait_label):
     """
     after selecting the groups, parse the input file
     :param previous_root:
     :param plate_values:
+    :param wait_label:
     :return:
     """
+    global full_data_table, c_times, diff_times_to_add
+    table_input_validation = is_groups_table_valid(plate_values)
 
-    # TODO check that all is filled
-    # TODO check that everything is legal
-    core.xls_to_csv(input_file_path, "Analysis", "C:/Users/Amit/PycharmProjects/lab_project_repo/LabProject/files/csv_file.csv")
-    input_file = "C:/Users/Amit/PycharmProjects/lab_project_repo/LabProject/files/csv_file.csv"  # TODO change to relative path
+    wait_label.config(text="It might take a while...\nPlease be patient")
+    wait_label.update_idletasks()
 
-    global full_data_table
-    global wells_names_by_type  # TODO should define in another place??
-    if is_groups_table_full(plate_values):
+    if table_input_validation:
+        core.xls_to_csv(input_file_path, "Analysis", "C:/Users/Amit/PycharmProjects/lab_project_repo/LabProject/files/csv_file.csv")
+        input_file = "C:/Users/Amit/PycharmProjects/lab_project_repo/LabProject/files/csv_file.csv"  # TODO change to relative path
+
         plate_table_vals = [[val.get() for val in lst] for lst in plate_values]
         wells_names_by_type = separate_by_group(plate_table_vals)
-
+        print("wells_names_by_type: ", wells_names_by_type)
         full_data_table = core.parse_input(input_file, types_names, wells_names_by_type, num_of_groups, start_time,
-                                           total_days, sampling_intervals, excel_well_labels, excel_time, excel_data,
+                                           sampling_intervals, excel_well_labels, excel_time, excel_data,
                                            none_to_num)
+
+        wait_label.config(text="")
+
+        # diff_times_to_add is the number of empty values added to complete total amount that divides by 24
+        c_times, diff_times_to_add = core.circadian_time_list(sampling_intervals, ct_zero, rec_start_time_list)
+        diff_times_to_add = int(diff_times_to_add)
+        print("diff_times_to_add: ", diff_times_to_add)
+
         choose_calculation_screen(previous_root)
+    else:
+        return
 
 
 def group_table_to_names(table_vals):
@@ -228,12 +269,15 @@ def choose_calculation_screen(previous_root):
 
     previous_root.withdraw()  # TODO if hide, then need to make sure that when backing it opens the right screen
     root = tk.Tk()
-    root.geometry("640x640")
+    root.geometry("700x680")
     root.resizable(height=False, width=False)
 
     top_frame = tk.Frame(root)
+    # diff_times_to_add is the number of empty values added to complete total amount that divides by 24
+    # c_times, diff_times_to_add = core.circadian_time_list(sampling_intervals, ct_zero, rec_start_time_list)
+
     # create graph of all data
-    fig = core.graph_data(sampling_intervals, total_days, types_names, full_data_table, samples_per_hour)  # todo remark added function input
+    fig = core.graph_data(sampling_intervals, c_times, diff_times_to_add, types_names, full_data_table, samples_per_hour)  # todo remark added function input
     canvas = FigureCanvasTkAgg(fig, master=top_frame)
     canvas.show()
     canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
@@ -244,29 +288,73 @@ def choose_calculation_screen(previous_root):
 
     period_btn = tk.Button(master=bottom_frame, text="  Calculate Period  ", bg='gainsboro',
                            command=lambda: period_g_settings_popup(root, "period"))
-    period_btn.grid(ipadx=5, padx=5, pady=3)
+    period_btn.grid(row=0, columnspan=3, ipadx=5, padx=5, pady=3)
 
     g_factor_btn = tk.Button(master=bottom_frame, text="  Calculate G factor  ", bg='gainsboro',
                              command=lambda: period_g_settings_popup(root, "g_factor"))
-    g_factor_btn.grid(ipadx=5, padx=5, pady=3)
+    g_factor_btn.grid(row=1, columnspan=3, ipadx=5, padx=5, pady=3)
 
     amplitude_btn = tk.Button(master=bottom_frame, text="  Calculate Amplitude & Phase  ", bg='gainsboro',
                               command=lambda: amplitude_settings_popup(root, "amplitude_phase"))
-    amplitude_btn.grid(ipadx=5, padx=5, pady=3)
-
-    # clustering_btn = tk.Button(master=bottom_frame, text="  Clustering  ", bg='gainsboro')
-    # clustering_btn.grid(ipadx=5, padx=5, pady=3)
+    amplitude_btn.grid(row=2, columnspan=3, ipadx=5, padx=5, pady=3)
 
     export_data_btn = tk.Button(master=bottom_frame, text="  Export Raw Data  ", bg='gainsboro',
-                                command=lambda: export_raw_data(full_data_table))
-    export_data_btn.grid(ipadx=5, padx=5, pady=3)
+                                command=lambda: export_raw_data(full_data_table, "raw data"))
+    export_data_btn.grid(row=3, columnspan=3, ipadx=5, padx=5, pady=3)
+
+    export_smoothed_data_btn = tk.Button(master=bottom_frame, text="  Export Smoothed Data  ", bg='gainsboro',
+                                         command=lambda: export_raw_data(smooth_all_data(full_data_table,
+                                                                         smoothed_window_entry.get()), "smoothed data"))
+    export_smoothed_data_btn.grid(row=4, column=0, ipadx=5, padx=5, pady=3)
+
+    smoothed_window_entry = tk.Entry(master=bottom_frame, bd=2, width=5)
+    smoothed_window_entry.insert(0, 20)
+    smoothed_window_entry.grid(row=4, column=1, ipadx=5, pady=3)
+
+    window_after_text = tk.Label(master=bottom_frame, text="(time points window)")
+    window_after_text.grid(row=4, column=2, sticky=tk.E, pady=3)
 
     back_btn = tk.Button(master=bottom_frame, text="  Back  ", bg='gainsboro',
                          command=lambda: show_previous_screen(root, previous_root))
-    back_btn.grid(ipadx=5, padx=5, pady=3)
+    back_btn.grid(row=5, columnspan=3, ipadx=5, padx=5, pady=3)
 
     bottom_frame.pack()
     root.mainloop()
+
+
+def period_g_factor_settings_input_check(previous_root, action, method_type):
+
+    c_times_min = c_times[0]
+    c_times_max = c_times[len(c_times)-1]
+
+    if not from_day_entry.get() or not for_days_entry.get():
+        messagebox.showinfo("Error", "One or more of the inputs is empty")
+        return
+    elif action == "period" and (not from_period_entry.get() or not to_period_entry.get()):
+        messagebox.showinfo("Error", "One or more of the inputs is empty")
+        return
+    elif not from_day_entry.get().isdigit() or not for_days_entry.get().isdigit():
+        messagebox.showinfo("Error", "One or more of the inputs is not a number")
+        return
+    elif action == "period" and (not from_period_entry.get().isdigit() or not to_period_entry.get().isdigit()):
+        messagebox.showinfo("Error", "One or more of the inputs is empty")
+        return
+    elif int(from_day_entry.get()) < c_times_min or int(from_day_entry.get()) >= c_times_max:
+        messagebox.showinfo("Error", "From day is not in range")
+        return
+    # elif int(for_days_entry.get()) < 1 or int(for_days_entry.get()) > total_days:  # TODO
+    #     messagebox.showinfo("Error", "Number of days is not in range")
+    #     return
+    elif (int(from_day_entry.get()) + (int(for_days_entry.get()) * HOURS_PER_DAY)) > c_times_max:
+        messagebox.showinfo("Error", "Number of days is not in range")
+        return
+    elif action == "period":
+        if int(from_period_entry.get()) < 0 or int(to_period_entry.get()) < 0 or int(from_period_entry.get()) > \
+                int(to_period_entry.get()):  # TODO can they have the same value??
+            messagebox.showinfo("Error", "Period range is not valid")
+            return
+    print("period_g_factor_settings_input_check before calc action")
+    calc_action(previous_root, action, method_type)
 
 
 def period_g_settings_popup(previous_root, action):
@@ -314,10 +402,10 @@ def period_g_settings_popup(previous_root, action):
         to_period_entry.insert(0, 32)
         to_period_entry.grid(row=2, column=4, pady=3)
 
-    days_label = tk.Label(master=top_frame, text="Start calculate from ")
+    days_label = tk.Label(master=top_frame, text="Start calculate from c.t. ")
     days_label.grid(row=1, column=0, sticky=tk.E, pady=3)
 
-    from_day_label = tk.Label(master=top_frame, text="hours for ")
+    from_day_label = tk.Label(master=top_frame, text=" for ")
     from_day_label.grid(row=1, column=2, pady=3, sticky=tk.W)
 
     from_day_entry = tk.Entry(master=top_frame, bd=2, width=5)
@@ -333,12 +421,33 @@ def period_g_settings_popup(previous_root, action):
                                                                                               previous_root))
     cancel_btn.grid(row=4, column=0, columnspan=2, pady=10)
 
-    calculate_btn = tk.Button(master=top_frame, text="  Calculate  ", command=lambda: calc_action(period_settings,
-                                                                                                  action, box.get()))
+    calculate_btn = tk.Button(master=top_frame, text="  Calculate  ", command=lambda:
+                              period_g_factor_settings_input_check(period_settings, action, box.get()))
     calculate_btn.grid(row=4, column=2, columnspan=2, pady=10)
 
     top_frame.pack()
     period_settings.mainloop()
+
+
+def amp_settings_input_check(previous_root, action, method_type):
+
+    c_times_min = c_times[0]
+    c_times_max = c_times[len(c_times)-1]
+
+    if not window_entry.get() or not amp_from_day_entry.get():
+        messagebox.showinfo("Error", "One or more of the inputs is empty")
+        return
+    elif not window_entry.get().isdigit() or not amp_from_day_entry.get().isdigit():
+        messagebox.showinfo("Error", "One or more of the inputs is not a number")
+        return
+    elif int(amp_from_day_entry.get()) < c_times_min or int(amp_from_day_entry.get()) > (c_times_max - HOURS_PER_DAY):
+        messagebox.showinfo("Error", "From hour is not in range")
+        return
+    elif int(window_entry.get()) <= 0 or int(window_entry.get()) > len(c_times):
+        messagebox.showinfo("Error", "Window size is not in range")
+        return
+
+    calc_action(previous_root, action, method_type)
 
 
 def amplitude_settings_popup(previous_root, action):
@@ -364,29 +473,26 @@ def amplitude_settings_popup(previous_root, action):
     window_entry.insert(0, 20)
     window_entry.grid(row=0, column=1, pady=3, sticky=tk.W)
 
-    amp_day_label = tk.Label(master=top_frame, text="Calculate amplitude from ")
-    amp_day_label.grid(row=1, column=0,  pady=3, sticky=tk.E)
+    window_sec_label = tk.Label(master=top_frame, text="(number of time points) ")
+    window_sec_label.grid(row=0, column=2, pady=3)
 
-    # amp_from_day_label = tk.Label(master=top_frame, text="from ")
-    # amp_from_day_label.grid(row=1, column=1, pady=3, sticky=tk.W)
+    amp_day_label = tk.Label(master=top_frame, text="Calculate amplitude & phase from c.t. ")
+    amp_day_label.grid(row=1, column=0,  pady=3, sticky=tk.E)
 
     amp_from_day_entry = tk.Entry(master=top_frame, bd=2, width=5)
     amp_from_day_entry.grid(row=1, column=1, pady=3)
 
-    amp_to_day_label = tk.Label(master=top_frame, text="hours ")
-    amp_to_day_label.grid(row=1, column=2, pady=3)
-
-    calculate_btn = tk.Button(master=top_frame, text="  Calculate  ", command=lambda: calc_action(amplitude_settings,
-                                                                                                  action, None))
+    calculate_btn = tk.Button(master=top_frame, text="  Calculate  ", command=lambda:
+                              amp_settings_input_check(amplitude_settings, action, None))
     calculate_btn.grid(row=2, column=2, columnspan=3, pady=10)
 
-    days_label = tk.Label(master=top_frame, text="For average amplitude calculate from ")
+    days_label = tk.Label(master=top_frame, text="For average amplitude & phase calculate from c.t. ")
     days_label.grid(row=3, column=0, sticky=tk.E, pady=3)
 
     avg_amp_from_time_entry = tk.Entry(master=top_frame, bd=2, width=5)
     avg_amp_from_time_entry.grid(row=3, column=1, pady=3)
 
-    from_day_label = tk.Label(master=top_frame, text="hours for ")
+    from_day_label = tk.Label(master=top_frame, text=" for ")
     from_day_label.grid(row=3, column=2, pady=3, sticky=tk.W)
 
     avg_amp_days_entry = tk.Entry(master=top_frame, bd=2, width=5)
@@ -399,7 +505,7 @@ def amplitude_settings_popup(previous_root, action):
                                                                                               previous_root))
     cancel_btn.grid(row=4, column=0, columnspan=2, pady=10)
 
-    average_amp_calculate_btn = tk.Button(master=top_frame, text="  Calculate average amplitude   ",
+    average_amp_calculate_btn = tk.Button(master=top_frame, text="  Calculate   ",
                                           command=lambda: average_amp_calc_action(amplitude_settings))
     average_amp_calculate_btn.grid(row=4, column=2, columnspan=3, pady=10)
 
@@ -417,28 +523,31 @@ def calc_action(previous_root, action, method_type):
     """
     print("method:  ", method_type)
 
-    ignore_part_beg = 0
-    ignore_part_end = 0
+    ignore_part_beg, samples_to_ignore_end = 0, 0
 
     if action == "amplitude_phase":
         core.window_size = int(window_entry.get())
         core.amplitude_phase.day_start = int(amp_from_day_entry.get())
     else:
-        hours_to_ignore_beg = int(from_day_entry.get())
-        period_to_day = int(for_days_entry.get()) * HOURS_PER_DAY + hours_to_ignore_beg
-        hours_to_ignore_end = (total_days * HOURS_PER_DAY) - period_to_day
+        hours_to_ignore_beg = int(from_day_entry.get())  # in hours
+        period_to_day = int(for_days_entry.get()) * HOURS_PER_DAY  # amount of hours excluding the hours to ignore from the beginning
+        # hours_to_ignore_end = (total_days * HOURS_PER_DAY) - period_to_day
 
         # select the relevant days
-        ignore_part_beg = int(hours_to_ignore_beg * samples_per_hour)  # number of samples to ignore from the beginning
-        ignore_part_end = int(hours_to_ignore_end * samples_per_hour)  # number of samples to ignore from the end
+        # remove the values that were added to circadian time list to complete 24 hours cycle from ct 0
+        # number of samples to ignore from the beginning
+        ignore_part_beg = int(hours_to_ignore_beg * samples_per_hour) - diff_times_to_add
+        samples_to_ignore_end = int(period_to_day * samples_per_hour) + ignore_part_beg
+        print("ignore_part_beg: ", ignore_part_beg)
+        print("samples_to_ignore_end: ", samples_to_ignore_end)
         if action == "period":
             action = method_type
             core.pc.from_period = int(from_period_entry.get()) * MINUTES_PER_HOUR
             core.pc.to_period = int(to_period_entry.get()) * MINUTES_PER_HOUR
 
-    results_values = core.groups_calculation(action, types_names, full_data_table, num_of_groups, start_time,
-                                             total_days, sampling_intervals, ignore_part_beg, ignore_part_end,
-                                             samples_per_hour)
+    results_values = core.groups_calculation(action, types_names, full_data_table, num_of_groups, start_time, c_times,
+                                             sampling_intervals, ignore_part_beg, samples_to_ignore_end,
+                                             samples_per_hour, diff_times_to_add)
     print("results_values:   ", results_values)
 
     if action == "fourier" or action == "chi_square":
@@ -446,6 +555,7 @@ def calc_action(previous_root, action, method_type):
         results_screen(previous_root, results_values, action, "core.period_results_graph", "  T-test  ")
     elif action == "amplitude_phase":
         results_values = break_amp_phase_to_dict(results_values)
+        print("results_values in amplitude_phase: ", results_values)
         amp_phase_results_screen(previous_root, results_values, action)
     elif action == "g_factor":
         # g_factor_results_screen(previous_root, results_values, action)
@@ -454,14 +564,32 @@ def calc_action(previous_root, action, method_type):
 
 def average_amp_calc_action(previous_root):
 
-    print("in average_amp_calc_action")
-    c_times = core.circadian_time_list(sampling_intervals, total_days)
-    average_amp = core.amplitude_phase.average_amplitude_wrap(int(avg_amp_from_time_entry.get()),
-                                                              int(avg_amp_days_entry.get()), full_data_table,
-                                                              c_times, types_names, int(window_entry.get()))
-    print("average_amp: ", average_amp)
+    c_times_min = c_times[0]
+    c_times_max = c_times[len(c_times)-1]
 
-    results_screen(previous_root, average_amp, "average_amplitude", "core.period_results_graph", "  T-test  ")
+    if not avg_amp_from_time_entry.get() or not avg_amp_days_entry.get():
+        messagebox.showinfo("Error", "One or more of the inputs is empty")
+        return
+    elif not avg_amp_from_time_entry.get().isdigit() or not avg_amp_days_entry.get().isdigit():
+        messagebox.showinfo("Error", "One or more of the inputs is not a number")
+        return
+    elif int(avg_amp_from_time_entry.get()) < c_times_min or int(avg_amp_from_time_entry.get()) >= c_times_max:
+        messagebox.showinfo("Error", "From day is not in range")
+        return
+    elif int(avg_amp_days_entry.get()) < 1:  # or int(avg_amp_days_entry.get()) > total_days: TODO
+        messagebox.showinfo("Error", "Number of days is not in range")
+        return
+    elif (int(avg_amp_from_time_entry.get()) + (int(avg_amp_days_entry.get()) * HOURS_PER_DAY)) > c_times_max:
+        messagebox.showinfo("Error", "From day and number of days are not in range")
+        return
+
+    average_amp_phase_results = core.amplitude_phase.average_amplitude_wrap(int(avg_amp_from_time_entry.get()),
+                                                              int(avg_amp_days_entry.get()), full_data_table,
+                                                              c_times, types_names, int(window_entry.get()),
+                                                              sampling_intervals, diff_times_to_add)
+    print("average_amp: ", average_amp_phase_results)
+    amp_phase_results_screen(previous_root, average_amp_phase_results, "average_amplitude")
+    # results_screen(previous_root, average_amp, "average_amplitude", "core.period_results_graph", "  T-test  ")
 
 
 def cancel_action(root, previous_root):
@@ -479,12 +607,13 @@ def eval_text_entry(entry_str):
     if not entry_str:
         return None
     else:
-            return ast.literal_eval(entry_str)
+        return ast.literal_eval(entry_str)
 
 
 def groups_stat_tests_call(entry, results_values, action):
 
     p_values = core.manage_statistic_tests(results_values, action, types_names)
+    p_values = {key: float("%.4f" % p_values[key]) for key in p_values.keys()}
     entry.configure(state=tk.NORMAL)
     entry.delete(0, tk.END)
     entry.insert(tk.INSERT, str(p_values))
@@ -566,13 +695,20 @@ def amp_phase_results_screen(previous_root, results_values, action):
                                 command=lambda: groups_stat_tests_call(phase_ttest_score, phase_results, action))
     phase_ttest_btn.grid(row=0, column=2, ipadx=5, padx=5, pady=3)
 
+    if action == "average_amplitude":
+        a_filename = "average amplitude"
+        p_filename = "average phase"
+    else:
+        a_filename = "amplitude"
+        p_filename = "phase"
+
     amp_export_btn = tk.Button(master=bottom_frame, text="  Export amplitude results  ", bg='gainsboro',
-                               command=lambda: save_to_excel(amplitude_results, "amplitude",
+                               command=lambda: save_to_excel(amplitude_results, a_filename,
                                                              eval_text_entry(amp_ttest_score.get())))
     amp_export_btn.grid(row=1, column=0, ipadx=5, padx=5, pady=3, columnspan=2)
 
     phase_export_btn = tk.Button(master=bottom_frame, text="  Export phase results  ", bg='gainsboro',
-                                 command=lambda: save_to_excel(full_phase_results, "phase",
+                                 command=lambda: save_to_excel(full_phase_results, p_filename,
                                                                eval_text_entry(phase_ttest_score.get())))
     phase_export_btn.grid(row=1, column=2, ipadx=5, padx=5, pady=3, columnspan=2)
 
@@ -588,7 +724,7 @@ def save_to_excel(data_to_write, filename, p_values_d):
     writer = pd.ExcelWriter(filename+".xlsx", engine="xlsxwriter")
     n = 0
     for i, name in enumerate(types_names):
-        if filename == "phase":
+        if filename == "phase" or filename == "average phase":
             for key in data_to_write[name]:
                 results_df_for_export[name+" "+key] = data_to_write[name][key]
                 if n < len(results_df_for_export[name+" "+key]):
@@ -602,8 +738,8 @@ def save_to_excel(data_to_write, filename, p_values_d):
     results_df_for_export.index = range(1, n + 1)
 
     mean_value, std_value, se_value = core.calc_statistic_values(results_df_for_export, 0)  # TODO 0 for calc on cols
-    print("mean_value: ", mean_value)
-    print("mean_value type: ", type(mean_value))
+    print("mean_value excel : ", mean_value)
+    print("mean_value excel type: ", type(mean_value))
 
     mean_value.name = "average"
     std_value.name = "std"
@@ -627,9 +763,9 @@ def save_to_excel(data_to_write, filename, p_values_d):
 
 
 # TODO full_data_table is global but is not recognized here
-def export_raw_data(data_tables):
+def export_raw_data(data_tables, filename):
     # Create a Pandas Excel writer using XlsxWriter as the engine.
-    writer = pd.ExcelWriter("raw_data.xlsx", engine="xlsxwriter")
+    writer = pd.ExcelWriter(filename+".xlsx", engine="xlsxwriter")
 
     for name in types_names:
         mean_value, std_value, se_value = core.calc_statistic_values(data_tables[name], 1)
@@ -645,6 +781,26 @@ def export_raw_data(data_tables):
     writer.save()
 
 
+def smooth_group_data(full_data, name, window=20):
+
+    columns_headers = full_data[name].columns.values.tolist()
+    s_data = {}
+    for header in columns_headers:
+        samples_data = full_data[name][header].tolist()
+        s_data[header] = core.amplitude_phase.smooth_data(samples_data, window)
+    df = pd.DataFrame.from_dict(s_data)
+    # Set DataFrame labels
+    df.index = full_data[types_names[0]].index
+    return df
+
+
+def smooth_all_data(data, window):
+
+    # if window.isdigit(): TODO
+    window = int(window)
+    return {types_names[i]: smooth_group_data(data, types_names[i], window) for i in range(num_of_groups)}
+
+
 def break_amp_phase_to_dict(data):
     """
     convert to list of triplets inside every key to dictionary
@@ -653,29 +809,36 @@ def break_amp_phase_to_dict(data):
     """
     full_dict = {}
     for i, name in enumerate(types_names):
-        group_dict = {"amplitude": [data[name][i][0] for i in range(len(data[name]))]}  # TODO how to turn it to dict literal?
-        group_dict["phase"] = [data[name][i][1][0] for i in range(len(data[name]))]
-        group_dict["phase c.t."] = [data[name][i][1][1] for i in range(len(data[name]))]
+        group_dict = {"amplitude": [data[name][i][0] for i in range(len(data[name]))],
+                      "phase": [data[name][i][1][0] for i in range(len(data[name]))],
+                      "phase c.t.": [data[name][i][1][1] for i in range(len(data[name]))]}
         full_dict[name] = group_dict  # pd.DataFrame.from_dict(group_dict)
     return full_dict
 
 
-def enable_button(*args):
+def enable_next_button(*args):
     """
 
     :param args:
     :return:
     """
-    print("in")
-    # a = brows_sv.get()
-    # b = plate_size_x_sv.get()
-    # c = plate_size_y_sv.get()
-    #
-    # if a and b and c and num_of_groups and types_names and samples_per_hour and sampling_intervals and total_days and \
-    #         start_time_hour and start_time_minutes:
-    #     next_button.config(state='normal')
-    # else:
-    #     next_button.config(state='disabled')
+    a = brows_sv.get()
+    b = plate_size_x_sv.get()
+    c = plate_size_y_sv.get()
+    d = num_of_groups_sv.get()
+    e = types_names_sv.get()
+    f = start_time_sv.get()
+    g = circadian_start_time_sv.get()
+    h = sampling_intervals_sv.get()
+    i = check_ignore_sv.get()
+    j = excel_well_labels_sv.get()
+    k = excel_time_sv.get()
+    l = excel_data_sv.get()
+
+    if a and b and c and d and e and f and g and h and i and j and k and l:
+        next_button.config(state='normal')
+    else:
+        next_button.config(state='disabled')
 
 
 def separate_time(time):
@@ -728,22 +891,23 @@ def set_global_values():
     :return:
     """
 
-    global num_of_groups, types_names, samples_per_hour, sampling_intervals, total_days, start_time_hour, \
-        start_time_minutes, start_time, excel_well_labels, excel_time, excel_data, none_to_num  #, total_num_of_values
+    global num_of_groups, types_names, samples_per_hour, sampling_intervals, ct_zero, start_time, excel_well_labels, \
+        excel_time, excel_data, none_to_num, rec_start_time_list
     # data from user input
     num_of_groups = int(num_of_groups_sv.get())  # number of mutations and wt groups
     types_names = types_names_sv.get().split(",")
 
     sampling_intervals = int(time_bin_minutes(separate_time(sampling_intervals_sv.get())))  # in minutes
     samples_per_hour = int(MINUTES_PER_HOUR / sampling_intervals)
-    total_days = int(total_days_sv.get())
 
     excel_well_labels, excel_time, excel_data = parse_excel_cols_names()
     none_to_num = int(check_ignore_sv.get())
 
-    start_time_separated = separate_time(start_time_sv.get())
-    start_time_hour = int(start_time_separated[0])
-    start_time_minutes = int(start_time_separated[1])
+    rec_start_time_list = start_time_sv.get().split(":")
+    rec_start_time_list = [int(elem) for elem in rec_start_time_list]
+
+    start_time_hour = int(rec_start_time_list[0])
+    start_time_minutes = int(rec_start_time_list[1])
 
     start_time_minutes += sampling_intervals
     if start_time_minutes == MINUTES_PER_HOUR:
@@ -752,10 +916,12 @@ def set_global_values():
     if start_time_hour == HOURS_PER_DAY:
         start_time_hour = 0
 
+    ct_zero = circadian_start_time_sv.get().split(":")
+    ct_zero = [int(elem) for elem in ct_zero]
+    print("ct_zero in set globals  ", ct_zero)
+
     start_time = datetime(datetime.now().year, datetime.now().month, datetime.now().day, hour=int(start_time_hour),
                           minute=int(start_time_minutes))
-
-    # total_num_of_values = int(MINUTES_PER_DAY / sampling_intervals * total_days)
 
 
 def main():
@@ -771,21 +937,22 @@ def main():
     title.pack(fill="x")
     subtitle = tk.Label(master=top_frame, text="Zebrafish Circadian Rhythms Analysis Tool", font=("Arial", 15))
     subtitle.pack(fill="x")
-    top_frame.pack(fill="x")
-
-    middle_frame = tk.Frame(root)
 
     logo = tk.PhotoImage(file="Yoav_lab.gif")
     logo_label = tk.Label(master=top_frame, image=logo, justify='center')
     logo_label.image = logo
     logo_label.pack(fill='x', pady=20)
 
-    global browse_entry, plate_size_entry, plate_size_entry_2, num_of_groups_entry, types_names_entry, \
-        sampling_intervals_entry, total_days_entry, start_time_entry, next_button  # TODO check if can remove this
+    top_frame.pack(fill="x")
 
-    global brows_sv, plate_size_x_sv, plate_size_y_sv, num_of_groups_sv, types_names_sv, samples_per_hour_sv, \
-        sampling_intervals_sv, total_days_sv, start_time_sv, check_ignore_sv, excel_well_labels_sv, excel_time_sv, \
-        excel_data_sv
+    global browse_entry, plate_size_entry, plate_size_entry_2, num_of_groups_entry, types_names_entry, \
+        sampling_intervals_entry, start_time_entry, next_button  # TODO check if can remove this
+
+    global brows_sv, plate_size_x_sv, plate_size_y_sv, num_of_groups_sv, types_names_sv, \
+        sampling_intervals_sv, start_time_sv, circadian_start_time_sv, check_ignore_sv, excel_well_labels_sv, \
+        excel_time_sv, excel_data_sv
+
+    middle_frame = tk.Frame(root)
 
     # create a browse button and locate it
     browse_button = tk.Button(master=middle_frame, text="  Browse  ", bg='gainsboro',
@@ -794,41 +961,17 @@ def main():
 
     # create StringVar objects to trace after user input (to then enable the next button)
     brows_sv = tk.StringVar()
-    brows_sv.trace("w", enable_button)
-
     plate_size_x_sv = tk.StringVar()
-    plate_size_x_sv.trace("w", enable_button)
-
     plate_size_y_sv = tk.StringVar()
-    plate_size_y_sv.trace("w", enable_button)
-
     num_of_groups_sv = tk.StringVar()
-    num_of_groups_sv.trace("w", enable_button)
-
     types_names_sv = tk.StringVar()
-    types_names_sv.trace("w", enable_button)
-
-    samples_per_hour_sv = tk.StringVar()
-    samples_per_hour_sv.trace("w", enable_button)
-
     sampling_intervals_sv = tk.StringVar()
-    sampling_intervals_sv.trace("w", enable_button)
-
-    total_days_sv = tk.StringVar()
-    total_days_sv.trace("w", enable_button)
-
     start_time_sv = tk.StringVar()
-    start_time_sv.trace("w", enable_button)
-
+    circadian_start_time_sv = tk.StringVar()
     check_ignore_sv = tk.StringVar()
-    check_ignore_sv.trace("w", enable_button)
-
     excel_well_labels_sv = tk.StringVar()
-    excel_well_labels_sv.trace("w", enable_button)
     excel_time_sv = tk.StringVar()
-    excel_time_sv.trace("w", enable_button)
     excel_data_sv = tk.StringVar()
-    excel_data_sv.trace("w", enable_button)
 
     # create the widgets
     browse_entry = tk.Entry(master=middle_frame, bd=2, textvariable=brows_sv)
@@ -846,6 +989,12 @@ def main():
     types_names_label = tk.Label(master=middle_frame, text="Groups names (name1,name2,...) ")
     types_names_entry = tk.Entry(master=middle_frame, bd=2, textvariable=types_names_sv)
 
+    start_time_label = tk.Label(master=middle_frame, text="Recording start time (hh:mm) ")
+    start_time_entry = tk.Entry(master=middle_frame, bd=2, textvariable=start_time_sv)
+
+    circadian_start_time_label = tk.Label(master=middle_frame, text="CT 0 (hh:mm) ")
+    circadian_start_time_entry = tk.Entry(master=middle_frame, bd=2, textvariable=circadian_start_time_sv)
+
     sampling_intervals_label = tk.Label(master=middle_frame, text="Time bin (hh:mm:ss) ")
     sampling_intervals_entry = tk.Entry(master=middle_frame, bd=2, textvariable=sampling_intervals_sv)
 
@@ -854,14 +1003,8 @@ def main():
     check_ignore_entry = tk.Entry(master=middle_frame, bd=2, width=5, textvariable=check_ignore_sv)
     check_ignore_entry.insert(0, 0)
 
-    total_days_label = tk.Label(master=middle_frame, text="Total Number of days of experiment ")
-    total_days_entry = tk.Entry(master=middle_frame, bd=2, textvariable=total_days_sv)
-
-    start_time_label = tk.Label(master=middle_frame, text="Start time (hh:mm) ")
-    start_time_entry = tk.Entry(master=middle_frame, bd=2, textvariable=start_time_sv)
-
     excel_cols_label = tk.Label(master=middle_frame, text="Relevant Excel columns ")
-    excel_well_label = tk.Label(master=middle_frame, text="Labels ")
+    excel_well_label = tk.Label(master=middle_frame, text="Arenas ")
     excel_time_label = tk.Label(master=middle_frame, text="Time ")
     excel_data_label = tk.Label(master=middle_frame, text="Data ")
     excel_well_entry = tk.Entry(master=middle_frame, bd=2, width=5, textvariable=excel_well_labels_sv)
@@ -873,7 +1016,6 @@ def main():
     plate_size_label.grid(row=1, column=0, sticky=tk.E, pady=2)
     plate_size_row_label.grid(row=1, column=1, sticky=tk.W, pady=2)
     plate_size_entry.grid(row=1, column=1, pady=2)
-    # plate_size_label_2.grid(row=1, column=1, pady=2)
     plate_size_col_label.grid(row=1, column=1, sticky=tk.E, pady=2)
     plate_size_entry_2.grid(row=1, column=2, sticky=tk.W, pady=2)
     num_of_groups_label.grid(row=2, column=0, sticky=tk.E, pady=2)
@@ -885,11 +1027,11 @@ def main():
     start_time_label.grid(row=4, column=0, sticky=tk.E, pady=2)
     start_time_entry.grid(row=4, column=1, pady=2)
 
+    circadian_start_time_label.grid(row=5, column=0, sticky=tk.E, pady=2)
+    circadian_start_time_entry.grid(row=5, column=1, pady=2)
+
     sampling_intervals_label.grid(row=6, column=0, sticky=tk.E, pady=2)
     sampling_intervals_entry.grid(row=6, column=1, pady=2)
-
-    total_days_label.grid(row=7, column=0, sticky=tk.E, pady=2)
-    total_days_entry.grid(row=7, column=1, pady=2)
 
     check_ignore_label.grid(row=8, column=0, sticky=tk.E, pady=2)
     check_ignore_entry.grid(row=8, column=1, pady=2)
@@ -902,18 +1044,39 @@ def main():
     excel_time_entry.grid(row=10, column=1,pady=2)
     excel_data_entry.grid(row=11, column=1, pady=2)
 
-    middle_frame.pack(fill="x")  # (expand=True)
+    middle_frame.pack(fill="x")
 
     bottom_frame = tk.Frame(root)
 
-    next_button = tk.Button(master=bottom_frame, text="  Next  ", font=14, bg='gainsboro',# state='disabled',
-                            command=lambda: select_groups_screen(root))
+    next_button = tk.Button(master=bottom_frame, text="  Next  ", font=14, bg='gainsboro', state='disabled',
+                            command=lambda: clicked_next(root))
     next_button.grid(ipadx=10, pady=10)
 
     bottom_frame.pack(fill="x", side=tk.BOTTOM)
     bottom_frame.place(relx=0.5, rely=0.95, anchor=tk.CENTER)
 
+    brows_sv.trace("w", enable_next_button)
+    plate_size_x_sv.trace("w", enable_next_button)
+    plate_size_y_sv.trace("w", enable_next_button)
+    num_of_groups_sv.trace("w", enable_next_button)
+    types_names_sv.trace("w", enable_next_button)
+    sampling_intervals_sv.trace("w", enable_next_button)
+    start_time_sv.trace("w", enable_next_button)
+    circadian_start_time_sv.trace("w", enable_next_button)
+    check_ignore_sv.trace("w", enable_next_button)
+    excel_well_labels_sv.trace("w", enable_next_button)
+    excel_time_sv.trace("w", enable_next_button)
+    excel_data_sv.trace("w", enable_next_button)
+
     root.mainloop()
+
+
+
+
+
+
+
+
 
 
 if __name__ == "__main__":
@@ -921,8 +1084,23 @@ if __name__ == "__main__":
     # xls_to_csv(input_file_path, "Analysis", "files/csv_file.csv")
     # DF = parse_input("C:/Users/Amit/PycharmProjects/lab_project_repo/LabProject/files/csv_file.csv")
 
+    # input_file = "C:/Users/Amit/PycharmProjects/lab_project_repo/LabProject/files/csv_file.csv"
+    #
+    # start_time = datetime(datetime.now().year, datetime.now().month, datetime.now().day, hour=int(9),
+    #                       minute=int(0))
+    # wells_names_by_type = [['A2', 'A4', 'A6', 'A8', 'B2', 'B4', 'B6', 'B8', 'C2', 'C4', 'C6', 'C8', 'D1', 'D3', 'D5',
+    #                         'D7', 'E1', 'E3', 'E5', 'E7', 'F1', 'F3', 'F5', 'F7'], ['A1', 'A3', 'A5', 'A7', 'B1', 'B3',
+    #                                                                                 'B5', 'B7', 'C1', 'C3', 'C5', 'C7',
+    #                                                                                 'D2', 'D4', 'D6', 'D8', 'E2', 'E4',
+    #                                                                                 'E6', 'E8', 'F2', 'F4', 'F6', 'F8']]
+    # group_names = ["wt", "mut"]
+    # full_data = core.parse_input(input_file, group_names, wells_names_by_type, 2, start_time, 10, 2, 3, 5, 0)
+    # num_of_groups = 2
+    #
+    # print("smooth_all_data(): ", smooth_all_data())
 
     main()
+
 
 
 
