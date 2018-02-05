@@ -27,7 +27,7 @@ def g_factor_calculation(larva_measurements_vec, number_of_days, samples_per_hou
     py = py.real  # [float(i) for i in py]
 
     # test_factor = py[location_circadian+1]
-    return float("%.2f" % float(py[location_circadian+1] / np.sum(np.array(py[1: (len(f)+1)]))))  # py[location_circadian+1] / np.sum(np.array(py[1: (len(f)+1)]))
+    return float("%.4f" % float(py[location_circadian+1] / np.sum(np.array(py[1: (len(f)+1)]))))  # py[location_circadian+1] / np.sum(np.array(py[1: (len(f)+1)]))
 
 
 # same as python range but for floats too

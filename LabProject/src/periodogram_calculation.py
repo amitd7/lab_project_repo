@@ -6,12 +6,10 @@ from pprint import pprint
 
 
 global from_period, to_period
-# from_period = 960  # TODO if I to init the global variables, will they be updated from the user's input?
-# to_period = 1920
 
 
 # calculate the period of one larva by the chosen method (fourier or chi square)
-def calculate_periodogram(measurements, i, method, interval):
+def calculate_periodogram(measurements, header, method, interval, path):
 
     global interval_duration
     interval_duration = interval  # TODO make sure it is initizlized
@@ -29,31 +27,24 @@ def calculate_periodogram(measurements, i, method, interval):
     max_index = np.argmax(periodogram_values)
     significant_period = periods[max_index]
     mark_max_value = [significant_period] * len(periods)
-
+    larva_period_value = float("%.4f" % significant_period)
     if method == "fourier":
-        larva_period_value = float("%.2f" % significant_period)
 
         plt.figure()
         plt.plot(periods, periodogram_values, 'b', mark_max_value, periodogram_values, 'k:')
-        plt.title("Periodogram (Fourier) - #%d" % (i+1))
+        plt.title("Periodogram (Fourier) - %s" % header)
         plt.xlabel("Period (h)")
         plt.ylabel("R^2")
-        plt.savefig("Periodogram (Fourier) - #%d" % (i+1))
+        plt.savefig(path + "Periodogram (Fourier) - %s" % header)
         plt.close()
         # plt.clf()
     else:
-        # check if the max value (the period) is above the p value i.e. is significant
-        if p_values[max_index] < np.amax(periodogram_values):
-            larva_period_value = float("%.2f" % significant_period)
-        else:
-            larva_period_value = 0  # TODO: which number to insert when it is not significant 0 or nan??
-
         plt.figure()
         plt.plot(periods, periodogram_values, 'b', periods, p_values, 'r--', mark_max_value, periodogram_values, 'k:')
-        plt.title("Periodogram (Chi-Square) - #%d" % (i+1))
+        plt.title("Periodogram (Chi-Square) - %s" % header)
         plt.xlabel("Period (h)")
         plt.ylabel("Qp")
-        plt.savefig("Periodogram (Chi-Square) - #%d" % (i+1))
+        plt.savefig(path + "Periodogram (Chi-Square) - %s" % header)
         plt.close()
         # plt.clf()
 

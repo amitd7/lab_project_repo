@@ -26,8 +26,8 @@ def amplitude_phase(measurements, interval_duration, window_size, samples_per_ho
     peak = max(smoothed_day_data)
     trough = min(smoothed_day_data)
 
-    amplitude_value = float("%.2f" % ((peak - trough) / 2))
-    phase_value = [day_times[np.argmax(smoothed_day_data)], float("%.2f" % day_ct[np.argmax(smoothed_day_data)])]
+    amplitude_value = float("%.4f" % ((peak - trough) / 2))
+    phase_value = [day_times[np.argmax(smoothed_day_data)], float("%.4f" % day_ct[np.argmax(smoothed_day_data)])]
     return [amplitude_value, phase_value]
 
 
@@ -50,7 +50,7 @@ def average_amplitude(from_ct, num_of_days, larva_data, circadian_times, interva
         phases += curr_ct[np.argmax(curr_data)]
         index += samples_per_day
 
-    return float("%.2f" % (amplitudes / num_of_days)), float("%.2f" % (phases / num_of_days))
+    return float("%.4f" % (amplitudes / num_of_days)), float("%.4f" % (phases / num_of_days))
 
 
 def average_amplitude_wrap(from_ct, num_of_days, data_table, circadian_times, group_names, window, interval_dur,

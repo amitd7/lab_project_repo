@@ -4,11 +4,9 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from tkinter import filedialog, ttk, messagebox
 
 import ast
-import matplotlib.pyplot as plt
-import numpy as np
+import os.path
 import pandas as pd
 import re
-# from scipy import stats
 import string
 import tkinter as tk
 
@@ -32,9 +30,16 @@ def select_input_file():
 
     :return:
     """
-    global input_file_path
-    input_file_path = filedialog.askopenfile().name
-    brows_sv.set(input_file_path)
+    global input_file_path, path_only, filename_no_ext
+    file_dialog = filedialog.askopenfile()
+    if file_dialog is not None:
+        input_file_path = file_dialog.name
+        brows_sv.set(input_file_path)
+
+        path_only, filename = os.path.split(input_file_path)
+        filename_no_ext = os.path.splitext(filename)[0]
+        path_only += "/Amitool Results/"
+        os.makedirs(path_only, exist_ok=True)
 
 
 def plate_table(master, rows, cols):
@@ -88,7 +93,7 @@ def select_groups_screen(previous_root):
 
     table_frame = tk.Frame(root)
     global submit_button
-    plate_table_values = plate_table(table_frame, int(plate_size_entry.get()), int(plate_size_entry_2.get()))
+    plate_table_values = plate_table(table_frame, int(plate_size_x_sv.get()), int(plate_size_y_sv.get()))
     table_frame.pack(expand=True)
 
     loading_frame = tk.Frame(root)
@@ -121,20 +126,24 @@ def is_groups_table_valid(plate_values):
     """
     row = len(plate_values)
     col = len(plate_values[0])
+    groups_nums = [i for i in range(num_of_groups)]
 
     for r in range(row):
         for c in range(col):
             cell_val = plate_values[r][c].get()
-            if not cell_val:
-                messagebox.showinfo("Error", "The table is not full")
-                return False
-            elif not cell_val.isdigit():
+            if not cell_val.isdigit() and not cell_val == "":
                 messagebox.showinfo("Error", "Value in cell number (%d, %d) is not a number" % (r+1, c+1))
                 return False
-            elif int(cell_val) >= num_of_groups:
+            elif not cell_val == "" and int(cell_val) >= num_of_groups:
                 messagebox.showinfo("Error", "Cell number (%d, %d) has an invalid input. \nValue needs to be a number "
                                              "between 0 to %d" % (r+1, c+1, num_of_groups-1))
                 return False
+    #         if int(cell_val) in groups_nums:
+    #             groups_nums.remove(int(cell_val))
+    # if groups_nums:
+    #     # list is not empty
+    #     messagebox.showinfo("Error", "Must have at least one arena in every group")
+    #     return False
     return True
 
 
@@ -143,7 +152,7 @@ def separate_names_to_show():
     create labels of groups and groups numbers to show for easier group selection
     :return:
     """
-    names = types_names_entry.get().split(",")
+    names = types_names_sv.get().split(",")
     names_str = ""
     for i, name in enumerate(names):
         names_str += str(i) + " - " + name + "  \n"
@@ -168,8 +177,9 @@ def clicked_next(previous_root):
     start_time_pattern = "(?:[01]\d|2[0123]):(?:[012345]\d)"
     time_bin_pattern = "(?:[01]\d|2[0123]):(?:[012345]\d):(?:[012345]\d)"
 
-    if not plate_size_x_sv.get().isdigit() or not plate_size_y_sv.get().isdigit() or not num_of_groups_sv.get().isdigit() \
-       or not check_ignore_sv.get().isdigit():
+    if not plate_size_x_sv.get().isdigit() or not plate_size_y_sv.get().isdigit() or not \
+            num_of_groups_sv.get().isdigit() or not check_ignore_sv.get().isdigit() or not \
+            excel_data_row_sv.get().isdigit():  # TODO maybe change to isdecimal?
         tk.messagebox.showinfo("Error", "Input is not a number")
         return
     if (int(plate_size_x_sv.get()) * int(plate_size_y_sv.get())) > 96:  # TODO is the calculation correct?
@@ -181,7 +191,10 @@ def clicked_next(previous_root):
     if not re.match(start_time_pattern, start_time_sv.get(), flags=0):
         tk.messagebox.showinfo("Error", "Start time has an invalid input")
         return
-    if not re.match(time_bin_pattern, sampling_intervals_sv.get(), flags=0):
+    if not re.match(start_time_pattern, circadian_start_time_sv.get(), flags=0):
+        tk.messagebox.showinfo("Error", "Circadian time 0 has an invalid input")
+        return
+    if not re.match(time_bin_pattern, sampling_intervals_sv.get(), flags=0) or sampling_intervals_sv.get() == "00:00:00":
         tk.messagebox.showinfo("Error", "Time bin has an invalid input")
         return
 
@@ -200,25 +213,33 @@ def submit_data(previous_root, plate_values, wait_label):
     global full_data_table, c_times, diff_times_to_add
     table_input_validation = is_groups_table_valid(plate_values)
 
-    wait_label.config(text="It might take a while...\nPlease be patient")
-    wait_label.update_idletasks()
-
     if table_input_validation:
-        core.xls_to_csv(input_file_path, "Analysis", "C:/Users/Amit/PycharmProjects/lab_project_repo/LabProject/files/csv_file.csv")
-        input_file = "C:/Users/Amit/PycharmProjects/lab_project_repo/LabProject/files/csv_file.csv"  # TODO change to relative path
+        wait_label.config(text="It might take a while...\nPlease be patient")
+        wait_label.update_idletasks()
+
+        excel_feedback = core.xls_to_csv(input_file_path, "Analysis", path_only + filename_no_ext + ".csv")
+        if excel_feedback == "XLRDError":
+            messagebox.showinfo("Error", "Input file is not valid")
+            wait_label.config(text="")
+            return
+        input_file = path_only + filename_no_ext + ".csv"
 
         plate_table_vals = [[val.get() for val in lst] for lst in plate_values]
         wells_names_by_type = separate_by_group(plate_table_vals)
-        print("wells_names_by_type: ", wells_names_by_type)
         full_data_table = core.parse_input(input_file, types_names, wells_names_by_type, num_of_groups, start_time,
-                                           sampling_intervals, excel_well_labels, excel_time, excel_data,
+                                           sampling_intervals, excel_data_row, excel_well_labels, excel_data,
                                            none_to_num)
+        if full_data_table == "FileNotFoundError" or full_data_table == "UnexpectedError":
+            messagebox.showinfo("Error", "An error has occurred when trying opening the input file\n Please check your "
+                                         "input values and try again")
+            wait_label.config(text="")
+            return
 
         wait_label.config(text="")
 
         # diff_times_to_add is the number of empty values added to complete total amount that divides by 24
         c_times, diff_times_to_add = core.circadian_time_list(sampling_intervals, ct_zero, rec_start_time_list)
-        diff_times_to_add = int(diff_times_to_add)
+        # diff_times_to_add = int(diff_times_to_add)
         print("diff_times_to_add: ", diff_times_to_add)
 
         choose_calculation_screen(previous_root)
@@ -241,8 +262,8 @@ def group_table_to_names(table_vals):
 
 def separate_by_group(table_vals):
     """
-    Separate the wells by groups.
-    Creates a nested list of the wells names of each experiment group
+    Separate the arenas by groups.
+    Creates a nested list of the arenas names of each experimental group
     :param table_vals:
     :return:
     """
@@ -256,7 +277,10 @@ def separate_by_group(table_vals):
 
     for i in range(row):
         for j in range(col):
-            wells_by_group[int(table_vals[i][j])].append(str(names_table[i][j]))
+            val = table_vals[i][j]
+            if not val == "":
+                wells_by_group[int(val)].append(str(names_table[i][j]))
+    print("wells_by_group: ", wells_by_group)
     return wells_by_group
 
 
@@ -273,11 +297,10 @@ def choose_calculation_screen(previous_root):
     root.resizable(height=False, width=False)
 
     top_frame = tk.Frame(root)
-    # diff_times_to_add is the number of empty values added to complete total amount that divides by 24
-    # c_times, diff_times_to_add = core.circadian_time_list(sampling_intervals, ct_zero, rec_start_time_list)
 
     # create graph of all data
-    fig = core.graph_data(sampling_intervals, c_times, diff_times_to_add, types_names, full_data_table, samples_per_hour)  # todo remark added function input
+    fig = core.graph_data(sampling_intervals, c_times, diff_times_to_add, types_names, full_data_table, samples_per_hour
+                          , path_only)
     canvas = FigureCanvasTkAgg(fig, master=top_frame)
     canvas.show()
     canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
@@ -474,7 +497,7 @@ def amplitude_settings_popup(previous_root, action):
     window_entry.grid(row=0, column=1, pady=3, sticky=tk.W)
 
     window_sec_label = tk.Label(master=top_frame, text="(number of time points) ")
-    window_sec_label.grid(row=0, column=2, pady=3)
+    window_sec_label.grid(row=0, column=2, columnspan=2, pady=3)
 
     amp_day_label = tk.Label(master=top_frame, text="Calculate amplitude & phase from c.t. ")
     amp_day_label.grid(row=1, column=0,  pady=3, sticky=tk.E)
@@ -523,14 +546,16 @@ def calc_action(previous_root, action, method_type):
     """
     print("method:  ", method_type)
 
-    ignore_part_beg, samples_to_ignore_end = 0, 0
+    ignore_part_beg, samples_to_ignore_end, days_for_calc = 0, 0, 0
 
     if action == "amplitude_phase":
         core.window_size = int(window_entry.get())
         core.amplitude_phase.day_start = int(amp_from_day_entry.get())
     else:
         hours_to_ignore_beg = int(from_day_entry.get())  # in hours
-        period_to_day = int(for_days_entry.get()) * HOURS_PER_DAY  # amount of hours excluding the hours to ignore from the beginning
+        days_for_calc = int(for_days_entry.get())
+        # amount of hours excluding the hours to ignore from the beginning
+        period_to_day = days_for_calc * HOURS_PER_DAY
         # hours_to_ignore_end = (total_days * HOURS_PER_DAY) - period_to_day
 
         # select the relevant days
@@ -547,10 +572,14 @@ def calc_action(previous_root, action, method_type):
 
     results_values = core.groups_calculation(action, types_names, full_data_table, num_of_groups, start_time, c_times,
                                              sampling_intervals, ignore_part_beg, samples_to_ignore_end,
-                                             samples_per_hour, diff_times_to_add)
-    print("results_values:   ", results_values)
+                                             samples_per_hour, diff_times_to_add, path_only, days_for_calc)
+    # print("results_values:   ", results_values)
+
+    print("results_values padded:   ", results_values)
+    # print("results_values2:   ", results_values)
 
     if action == "fourier" or action == "chi_square":
+        results_values = core.pad_to_match_lengths(results_values)
         # period_results_screen(previous_root, results_values, action, core.period_results_graph, "  T-test  ")
         results_screen(previous_root, results_values, action, "core.period_results_graph", "  T-test  ")
     elif action == "amplitude_phase":
@@ -558,6 +587,7 @@ def calc_action(previous_root, action, method_type):
         print("results_values in amplitude_phase: ", results_values)
         amp_phase_results_screen(previous_root, results_values, action)
     elif action == "g_factor":
+        results_values = core.pad_to_match_lengths(results_values)
         # g_factor_results_screen(previous_root, results_values, action)
         results_screen(previous_root, results_values, action, "core.g_factor_results_graph", "  KS-test  ")
 
@@ -584,10 +614,12 @@ def average_amp_calc_action(previous_root):
         return
 
     average_amp_phase_results = core.amplitude_phase.average_amplitude_wrap(int(avg_amp_from_time_entry.get()),
-                                                              int(avg_amp_days_entry.get()), full_data_table,
-                                                              c_times, types_names, int(window_entry.get()),
-                                                              sampling_intervals, diff_times_to_add)
-    print("average_amp: ", average_amp_phase_results)
+                                                                            int(avg_amp_days_entry.get()),
+                                                                            full_data_table, c_times, types_names,
+                                                                            int(window_entry.get()), sampling_intervals,
+                                                                            diff_times_to_add)
+    print("average_amp_calc_action -> average_amp: ", average_amp_phase_results)
+
     amp_phase_results_screen(previous_root, average_amp_phase_results, "average_amplitude")
     # results_screen(previous_root, average_amp, "average_amplitude", "core.period_results_graph", "  T-test  ")
 
@@ -630,7 +662,7 @@ def results_screen(previous_root, results_values, action, func_name, btn_name):
     top_frame = tk.Frame(root)
     # create graph of results
     # fig = core.period_results_graph(results_values, types_names, action)
-    fig = eval(func_name)(results_values, types_names, action)
+    fig = eval(func_name)(results_values, types_names, action, path_only)
     canvas = FigureCanvasTkAgg(fig, master=top_frame)
     canvas.show()
     canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
@@ -664,7 +696,7 @@ def amp_phase_results_screen(previous_root, results_values, action):
 
     top_frame = tk.Frame(root)
     # create graph of results
-    fig = core.amp_phase_results_graph(results_values, types_names, action, action)
+    fig = core.amp_phase_results_graph(results_values, types_names, action, action, path_only)
     canvas = FigureCanvasTkAgg(fig, master=top_frame)
     canvas.show()
     canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
@@ -716,17 +748,29 @@ def amp_phase_results_screen(previous_root, results_values, action):
     root.mainloop()
 
 
+def find_max_length(phase_data):
+    max_len = 0
+    for name in types_names:
+        for key in phase_data[name]:
+            curr_len = len(phase_data[name][key])
+            if max_len < curr_len:
+                max_len = curr_len
+    return max_len
+
+
 def save_to_excel(data_to_write, filename, p_values_d):
 
     # data_to_write has to be a dictionary
     results_df_for_export = pd.DataFrame()
     # Create a Pandas Excel writer using XlsxWriter as the engine.
-    writer = pd.ExcelWriter(filename+".xlsx", engine="xlsxwriter")
+    writer = pd.ExcelWriter(path_only + filename + ".xlsx", engine="xlsxwriter")
     n = 0
     for i, name in enumerate(types_names):
         if filename == "phase" or filename == "average phase":
             for key in data_to_write[name]:
-                results_df_for_export[name+" "+key] = data_to_write[name][key]
+                p_max_len = find_max_length(data_to_write)
+                curr_len = len(data_to_write[name][key])
+                results_df_for_export[name+" "+key] = data_to_write[name][key] + ([None] * (p_max_len - curr_len))
                 if n < len(results_df_for_export[name+" "+key]):
                     n = len(results_df_for_export[name+" "+key])
         else:
@@ -737,9 +781,7 @@ def save_to_excel(data_to_write, filename, p_values_d):
     # Change the index numbers (rows names) to start from 1 and not from 0 as in default
     results_df_for_export.index = range(1, n + 1)
 
-    mean_value, std_value, se_value = core.calc_statistic_values(results_df_for_export, 0)  # TODO 0 for calc on cols
-    print("mean_value excel : ", mean_value)
-    print("mean_value excel type: ", type(mean_value))
+    mean_value, std_value, se_value = core.calc_statistic_values(results_df_for_export, 0)
 
     mean_value.name = "average"
     std_value.name = "std"
@@ -750,32 +792,47 @@ def save_to_excel(data_to_write, filename, p_values_d):
     if p_values_d is not None:
         p_value_df = pd.DataFrame(list(p_values_d.items()))
         p_value_df.index = ["p value"] * len(p_values_d)
+    else:
+        p_value_df = None
 
-        results_df_for_export = results_df_for_export.append(p_value_df)
+    try:
+        # Convert the dataframe to an XlsxWriter Excel object.
+        results_df_for_export.to_excel(writer, sheet_name=filename)
+        if p_value_df is not None:
+            spaces = 5
+            row = len(results_df_for_export.index) + spaces
+            p_value_df.to_excel(writer, sheet_name=filename, startrow=row, startcol=0)
+            # print("len(results_df_for_export.columns): ", len(results_df_for_export.columns))
+            # col = len(results_df_for_export.columns) + spaces
+            # print("col: ", col)
+            # p_value_df.to_excel(writer, sheet_name=filename, startrow=0, startcol=col)
 
-    print("df:  ", results_df_for_export)
-
-    # Convert the dataframe to an XlsxWriter Excel object.
-    results_df_for_export.to_excel(writer, sheet_name=filename)
-
-    # Close the Pandas Excel writer and output the Excel file.
-    writer.save()
+        # Close the Pandas Excel writer and output the Excel file.
+        writer.save()
+    except PermissionError:
+        messagebox.showerror("Error", "The action can't be completed because a file with the name %s.xlsx is "
+                                      "open.\nClose the file and try again." % filename)
+        return
 
 
 # TODO full_data_table is global but is not recognized here
 def export_raw_data(data_tables, filename):
     # Create a Pandas Excel writer using XlsxWriter as the engine.
-    writer = pd.ExcelWriter(filename+".xlsx", engine="xlsxwriter")
+    writer = pd.ExcelWriter(path_only + filename + ".xlsx", engine="xlsxwriter")
+    # print("export_raw_data -> data_tables: ", data_tables)
+    data_table_copy = {}
+    for name in types_names:
+        data_table_copy[name] = data_tables[name].copy(deep=True)
 
     for name in types_names:
-        mean_value, std_value, se_value = core.calc_statistic_values(data_tables[name], 1)
+        mean_value, std_value, se_value = core.calc_statistic_values(data_table_copy[name], 1)
         # add values to table
-        data_tables[name]["average"] = mean_value
-        data_tables[name]["std"] = std_value
-        data_tables[name]["s. error"] = se_value
+        data_table_copy[name]["average"] = mean_value
+        data_table_copy[name]["std"] = std_value
+        data_table_copy[name]["s. error"] = se_value
 
         # Convert the dataframe to an XlsxWriter Excel object.
-        data_tables[name].to_excel(writer, sheet_name=name)
+        data_table_copy[name].to_excel(writer, sheet_name=name)
 
     # Close the Pandas Excel writer and output the Excel file.
     writer.save()
@@ -783,14 +840,17 @@ def export_raw_data(data_tables, filename):
 
 def smooth_group_data(full_data, name, window=20):
 
-    columns_headers = full_data[name].columns.values.tolist()
-    s_data = {}
-    for header in columns_headers:
-        samples_data = full_data[name][header].tolist()
-        s_data[header] = core.amplitude_phase.smooth_data(samples_data, window)
-    df = pd.DataFrame.from_dict(s_data)
-    # Set DataFrame labels
-    df.index = full_data[types_names[0]].index
+    if not full_data[name].empty:
+        columns_headers = full_data[name].columns.values.tolist()
+        s_data = {}
+        for header in columns_headers:
+            samples_data = full_data[name][header].tolist()
+            s_data[header] = core.amplitude_phase.smooth_data(samples_data, window)
+        df = pd.DataFrame.from_dict(s_data)
+        # Set DataFrame labels
+        df.index = full_data[types_names[types_names.index(name)]].index
+    else:
+        df = pd.DataFrame()
     return df
 
 
@@ -832,18 +892,13 @@ def enable_next_button(*args):
     h = sampling_intervals_sv.get()
     i = check_ignore_sv.get()
     j = excel_well_labels_sv.get()
-    k = excel_time_sv.get()
-    l = excel_data_sv.get()
+    k = excel_data_sv.get()
+    l = excel_data_row_sv.get()
 
     if a and b and c and d and e and f and g and h and i and j and k and l:
         next_button.config(state='normal')
     else:
         next_button.config(state='disabled')
-
-
-def separate_time(time):
-
-    return time.split(":")
 
 
 def time_bin_minutes(lst):
@@ -861,17 +916,12 @@ def time_bin_minutes(lst):
 def parse_excel_cols_names():
 
     e_well_labels = excel_well_labels_sv.get()
-    e_time = excel_time_sv.get()
     e_data = excel_data_sv.get()
 
     if not e_well_labels.isdigit():
         e_well_labels = ord(e_well_labels.lower()) % 32
     else:
         e_well_labels = int(e_well_labels)
-    if not e_time.isdigit():
-        e_time = ord(e_time.lower()) % 32
-    else:
-        e_time = int(e_time)
     if not e_data.isdigit():
         e_data = ord(e_data.lower()) % 32
     else:
@@ -879,10 +929,9 @@ def parse_excel_cols_names():
 
     # Indexing in excel columns start from zero
     e_well_labels -= 1
-    e_time -= 1
     e_data -= 1
 
-    return e_well_labels, e_time, e_data
+    return e_well_labels, e_data
 
 
 def set_global_values():
@@ -891,16 +940,17 @@ def set_global_values():
     :return:
     """
 
-    global num_of_groups, types_names, samples_per_hour, sampling_intervals, ct_zero, start_time, excel_well_labels, \
-        excel_time, excel_data, none_to_num, rec_start_time_list
+    global num_of_groups, types_names, samples_per_hour, sampling_intervals, ct_zero, start_time, excel_data_row, \
+        excel_well_labels, excel_data, none_to_num, rec_start_time_list
     # data from user input
     num_of_groups = int(num_of_groups_sv.get())  # number of mutations and wt groups
     types_names = types_names_sv.get().split(",")
 
-    sampling_intervals = int(time_bin_minutes(separate_time(sampling_intervals_sv.get())))  # in minutes
+    sampling_intervals = int(time_bin_minutes(sampling_intervals_sv.get().split(":")))  # in minutes
     samples_per_hour = int(MINUTES_PER_HOUR / sampling_intervals)
 
-    excel_well_labels, excel_time, excel_data = parse_excel_cols_names()
+    excel_data_row = int(excel_data_row_sv.get())
+    excel_well_labels, excel_data = parse_excel_cols_names()
     none_to_num = int(check_ignore_sv.get())
 
     rec_start_time_list = start_time_sv.get().split(":")
@@ -918,7 +968,6 @@ def set_global_values():
 
     ct_zero = circadian_start_time_sv.get().split(":")
     ct_zero = [int(elem) for elem in ct_zero]
-    print("ct_zero in set globals  ", ct_zero)
 
     start_time = datetime(datetime.now().year, datetime.now().month, datetime.now().day, hour=int(start_time_hour),
                           minute=int(start_time_minutes))
@@ -945,12 +994,9 @@ def main():
 
     top_frame.pack(fill="x")
 
-    global browse_entry, plate_size_entry, plate_size_entry_2, num_of_groups_entry, types_names_entry, \
-        sampling_intervals_entry, start_time_entry, next_button  # TODO check if can remove this
-
-    global brows_sv, plate_size_x_sv, plate_size_y_sv, num_of_groups_sv, types_names_sv, \
-        sampling_intervals_sv, start_time_sv, circadian_start_time_sv, check_ignore_sv, excel_well_labels_sv, \
-        excel_time_sv, excel_data_sv
+    global next_button, brows_sv, plate_size_x_sv, plate_size_y_sv, num_of_groups_sv, types_names_sv, \
+        sampling_intervals_sv, start_time_sv, circadian_start_time_sv, check_ignore_sv, excel_data_row_sv,\
+        excel_well_labels_sv, excel_data_sv
 
     middle_frame = tk.Frame(root)
 
@@ -969,8 +1015,8 @@ def main():
     start_time_sv = tk.StringVar()
     circadian_start_time_sv = tk.StringVar()
     check_ignore_sv = tk.StringVar()
+    excel_data_row_sv = tk.StringVar()
     excel_well_labels_sv = tk.StringVar()
-    excel_time_sv = tk.StringVar()
     excel_data_sv = tk.StringVar()
 
     # create the widgets
@@ -1003,12 +1049,13 @@ def main():
     check_ignore_entry = tk.Entry(master=middle_frame, bd=2, width=5, textvariable=check_ignore_sv)
     check_ignore_entry.insert(0, 0)
 
-    excel_cols_label = tk.Label(master=middle_frame, text="Relevant Excel columns ")
+    excel_data_row_label = tk.Label(master=middle_frame, text="Excel first row of data ")
+    excel_data_row_entry = tk.Entry(master=middle_frame, bd=2, width=5, textvariable=excel_data_row_sv)
+
+    excel_cols_label = tk.Label(master=middle_frame, text="Relevant Excel columns: ")
     excel_well_label = tk.Label(master=middle_frame, text="Arenas ")
-    excel_time_label = tk.Label(master=middle_frame, text="Time ")
     excel_data_label = tk.Label(master=middle_frame, text="Data ")
     excel_well_entry = tk.Entry(master=middle_frame, bd=2, width=5, textvariable=excel_well_labels_sv)
-    excel_time_entry = tk.Entry(master=middle_frame, bd=2, width=5, textvariable=excel_time_sv)
     excel_data_entry = tk.Entry(master=middle_frame, bd=2, width=5, textvariable=excel_data_sv)
 
     # locate all widgets on screen
@@ -1036,12 +1083,13 @@ def main():
     check_ignore_label.grid(row=8, column=0, sticky=tk.E, pady=2)
     check_ignore_entry.grid(row=8, column=1, pady=2)
 
-    excel_cols_label.grid(row=9, column=0, sticky=tk.E, pady=2)
-    excel_well_label.grid(row=9, column=1, sticky=tk.W, pady=2)
-    excel_time_label.grid(row=10, column=1, sticky=tk.W, pady=2)
+    excel_data_row_label.grid(row=9, column=0, sticky=tk.E, pady=2)
+    excel_data_row_entry.grid(row=9, column=1, pady=2)
+
+    excel_cols_label.grid(row=10, column=0, sticky=tk.E, pady=2)
+    excel_well_label.grid(row=10, column=1, sticky=tk.W, pady=2)
     excel_data_label.grid(row=11, column=1, sticky=tk.W, pady=2)
-    excel_well_entry.grid(row=9, column=1, pady=2)
-    excel_time_entry.grid(row=10, column=1,pady=2)
+    excel_well_entry.grid(row=10, column=1, pady=2)
     excel_data_entry.grid(row=11, column=1, pady=2)
 
     middle_frame.pack(fill="x")
@@ -1064,19 +1112,11 @@ def main():
     start_time_sv.trace("w", enable_next_button)
     circadian_start_time_sv.trace("w", enable_next_button)
     check_ignore_sv.trace("w", enable_next_button)
+    excel_data_row_sv.trace("w", enable_next_button)
     excel_well_labels_sv.trace("w", enable_next_button)
-    excel_time_sv.trace("w", enable_next_button)
     excel_data_sv.trace("w", enable_next_button)
 
     root.mainloop()
-
-
-
-
-
-
-
-
 
 
 if __name__ == "__main__":
@@ -1088,11 +1128,7 @@ if __name__ == "__main__":
     #
     # start_time = datetime(datetime.now().year, datetime.now().month, datetime.now().day, hour=int(9),
     #                       minute=int(0))
-    # wells_names_by_type = [['A2', 'A4', 'A6', 'A8', 'B2', 'B4', 'B6', 'B8', 'C2', 'C4', 'C6', 'C8', 'D1', 'D3', 'D5',
-    #                         'D7', 'E1', 'E3', 'E5', 'E7', 'F1', 'F3', 'F5', 'F7'], ['A1', 'A3', 'A5', 'A7', 'B1', 'B3',
-    #                                                                                 'B5', 'B7', 'C1', 'C3', 'C5', 'C7',
-    #                                                                                 'D2', 'D4', 'D6', 'D8', 'E2', 'E4',
-    #                                                                                 'E6', 'E8', 'F2', 'F4', 'F6', 'F8']]
+
     # group_names = ["wt", "mut"]
     # full_data = core.parse_input(input_file, group_names, wells_names_by_type, 2, start_time, 10, 2, 3, 5, 0)
     # num_of_groups = 2
