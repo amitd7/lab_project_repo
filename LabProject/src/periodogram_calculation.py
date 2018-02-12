@@ -17,15 +17,24 @@ def calculate_periodogram(measurements, header, method, interval, path):
     if method == "fourier":
         periods, periodogram_values, p_values = calculate_fourier_periodogram(measurements)
     else:
-        periods, periodogram_values, p_values = calc_chi_square_periodogram(measurements)
+        periods, periodogram_values, p_values = calc_chi_square_periodogram(measurements, header)
+    #################
+    fp = int(from_period / interval_duration)
+    tp = int(to_period / interval_duration)
+    max_ind = peak_finder(periodogram_values, fp, tp, p_values, interval, header)
+    # print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+    # peak_finder(periodogram_values, from_period, to_period, p_values, interval)
+    #################
 
     # incorporate calibration
     periods = inc_calib(np.array(periods))
     # convert units from minutes to hours
     periods = [x / 60 for x in periods]
-
+    # print("calculate_periodogram -> max_ind: ", max_ind)
     max_index = np.argmax(periodogram_values)
-    significant_period = periods[max_index]
+    # print("calculate_periodogram -> max_index: ", max_index)
+    significant_period = periods[max_ind]
+    # print("calculate_periodogram -> significant_period: ", significant_period)
     mark_max_value = [significant_period] * len(periods)
     larva_period_value = float("%.4f" % significant_period)
     if method == "fourier":
@@ -85,10 +94,10 @@ def r2(measurements, j):
     a_j *= (2 / n)
     b_j *= (2 / n)
 
-    return a_j ** 2 + b_j ** 2
+    return float(a_j ** 2 + b_j ** 2)
 
 
-def calc_chi_square_periodogram(measurements, p_value=0.05):
+def calc_chi_square_periodogram(measurements, header, p_value=0.05):
     M = 0
     n = len(measurements)
     fp = int(from_period / interval_duration)
@@ -107,21 +116,20 @@ def calc_chi_square_periodogram(measurements, p_value=0.05):
     for i in range(0, n):
         if not math.isnan(measurements[i]):
             diff = measurements[i] - M
-            mse += diff * diff
-
+            mse += (diff * diff)
     mse /= n
 
     for P in range(fp, tp):
         Qp = 0
-        K = n / P  # integer division
+        K = int(n / P)  # integer division
         for h in range(0, P):
             Mh = 0
-            for k in range(0, int(K)):
-                if not math.isnan(measurements[k]):
+            for k in range(0, K):
+                if not math.isnan(measurements[h + k * P]):
                     Mh += measurements[h + k * P]
             Mh /= K
             diff = Mh - M
-            Qp += diff * diff
+            Qp += (diff * diff)
 
         Qp = Qp * K / mse
         period[P - fp] = P
@@ -163,3 +171,61 @@ def inc_calib(periods):
     for i in range(periods.size):
         periods[i] *= factor
     return periods
+
+
+def peak_finder(values, fp, tp, p_values, factor, header):
+    # find peaks
+    # use p-values as references
+    relatives = list(values)
+
+    # use p values as references
+    for i in range(0, len(values)):
+        relatives[i] -= p_values[i]
+    max_ind = relatives.index(max(relatives))
+    # print("peak_finder ->  max_ind: ", max_ind)
+
+    # print("peak_finder ->  relatives2: ", relatives)
+    # peaks = find_peaks(relatives)
+
+    # print("peak_finder ->  peaks: ", peaks)
+    # yminmax = [min(values), max(values)]
+    # print("peak_finder ->  yminmax: ", yminmax)
+    # # draw the peaks
+    # p = peaks[0]
+    # print("peak_finder ->  p: ", p)
+    # x = p / (tp - fp)
+    # print("peak_finder ->  x: ", x)
+    # y = (yminmax[1] - values[p]) / (yminmax[1] - yminmax[0])
+    # print("peak_finder ->  y: ", y)
+    # period = (fp + p) * factor
+    # print("peak_finder ->  period: ", period)
+    # plot.addLabel(x, y, df.format(period))
+    return max_ind
+
+
+def find_peaks(signal):
+    s = {}
+
+    first_with_max_value = 0
+    last_value = signal[0]
+    for i in range(1, len(signal)):
+        v = signal[i]
+        if v > last_value:
+            first_with_max_value = i
+        elif v < last_value and first_with_max_value != -1:
+            idx = int((first_with_max_value + (i - 1)) / 2)
+            s[idx] = signal[idx]
+            first_with_max_value = -1
+        last_value = v
+    print("")
+    print("find_peaks -> s: ", s)
+    print("")
+    peaks = [None] * len(s)
+    i = int(len(peaks) - 1)
+
+    for key in s.keys():
+        peaks[i] = key
+        i -= 1
+
+    return peaks
+

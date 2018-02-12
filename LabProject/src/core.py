@@ -9,7 +9,7 @@ import xlrd
 
 
 import src.periodogram_calculation as pc
-from src import amplitude_phase, g_factor, clustering
+from src import amplitude_phase, g_factor
 
 CIRCADIAN_TIME = HOURS_PER_DAY = 24
 MINUTES_PER_HOUR = 60
@@ -35,7 +35,7 @@ def xls_to_csv(path, sheet, csv_file):
 
 
 def parse_input(input_file, types_names, wells_names_by_type, num_of_groups, start_time, sampling_intervals,
-                excel_data_row, cols_labels, data_col, none_val_to_num): ### TODO ###
+                excel_data_row, cols_labels, data_col, none_val_to_num):
     """
 
     :param input_file:
@@ -123,20 +123,26 @@ def circadian_time_list(interval, ct_zero, rec_start_time):
     return [float("%.2f" % elem) for elem in ct], diff_to_add
 
 
-def create_data_table(data, selected_wells, start_time, sampling_intervals, unknown_val): ### TODO ###
+def create_data_table(data, selected_wells, start_time, sampling_intervals, unknown_val):
     """
     creates data table for specific type of sample group (for example to WT sample)
     :param data:
     :param selected_wells:
+    :param start_time:
+    :param sampling_intervals:
+    :param unknown_val:
     :return:
     """
     # return all rows that relate to the wt wells.
     data_rows = [[row for index, row in data.iterrows() if row["type"] == well] for well in selected_wells]
 
-    # create list of data values lists
-    data_values = [[float(data[1]) if data[1] != "-" else unknown_val for data in inner_list] for inner_list in
-                   data_rows]
-
+    try:
+        # create list of data values lists
+        data_values = [[float(data[1]) if data[1] != "-" else unknown_val for data in inner_list] for inner_list in
+                       data_rows]
+    except ValueError:
+        return ValueError
+        # TODO if wrong column was chosen raise ValueError:
     global num_of_values_per_larva, list_time
 
     if data_values:
@@ -178,15 +184,14 @@ def calc_statistic_values(df, axis_to_calc):
     return mean_value, std_value, se_value
 
 
-def calculate_activity_patterns(data_table, method, start_time, circadian_time, sampling_intervals, ignore_part_beg,
-                                ignore_part_end, samples_per_hour, diff_time, path_to_save, days_for_calc): ### TODO ###
+def calculate_activity_patterns(data_table, method, circadian_time, sampling_intervals, ignore_part_beg,
+                                ignore_part_end, samples_per_hour, diff_time, path_to_save, days_for_calc):
     """
     calculates period by fourier, period by chi-square, amplitude and phase, g factor
     the calculation is made for all larvas of one group type.
     the return value is a list of values of each larva
     :param data_table: data table of one group
     :param method:
-    :param start_time:
     :param circadian_time:
     :param sampling_intervals:
     :param ignore_part_beg:
@@ -223,17 +228,18 @@ def calculate_activity_patterns(data_table, method, start_time, circadian_time, 
     return values
 
 
-def graph_data(sampling_intervals, c_times, diff_to_add, types_names, DF, samples_per_hour, path_to_save): ### TODO ###
+def graph_data(c_times, diff_to_add, types_names, df, samples_per_hour, path_to_save, title, filename):
     """
     Create a graph of the average data of each group
     (contains all days of experiment)
-    :param sampling_intervals:
     :param c_times:
     :param diff_to_add:
     :param types_names:
-    :param DF:
+    :param df:
     :param samples_per_hour:
     :param path_to_save:
+    :param title:
+    :param filename:
     :return:
     """
     plt.clf()  # clears the entire current figure
@@ -241,12 +247,15 @@ def graph_data(sampling_intervals, c_times, diff_to_add, types_names, DF, sample
 
     for name in types_names:
         # calc mean values of each row in the table
-        data_mean = DF[name].mean(axis=1, skipna=True).values
+        data_mean = df[name].mean(axis=1, skipna=True).values
 
         none_list_to_add = [None]*int(diff_to_add)
         concatenated_data = np.concatenate((none_list_to_add, data_mean))
 
-        plt.plot(concatenated_data)
+        data_se = df[name].sem(axis=1, skipna=True).values
+        concatenated_data_se = np.concatenate((none_list_to_add, data_se))
+        # plt.plot(concatenated_data)
+        plt.errorbar(list(range(len(concatenated_data))), concatenated_data, concatenated_data_se, elinewidth=0.3)
     # the space between ticks needed in order to have a tick every 12 hours
     frequency = int(samples_per_hour * CIRCADIAN_TIME / 2)
     plt.xticks(np.arange(0, len(c_times)+1, frequency), c_times[::frequency])
@@ -256,21 +265,36 @@ def graph_data(sampling_intervals, c_times, diff_to_add, types_names, DF, sample
     minor_ticks = np.arange(0, len(c_times)+1, samples_per_hour)
     ax.set_xticks(minor_ticks, minor=True)
 
-    plt.title("Average data per experimental group by time")
+    plt.title(title)
     plt.xlabel("Time (hrs)")
     plt.ylabel(experiment_title)
     plt.legend(types_names, loc='upper left')
-    plt.savefig(path_to_save + "data_average_graph")
+    plt.savefig(path_to_save + filename)
     return fig
 
 
-def groups_calculation(method, types_names, DF, num_of_groups, start_time, c_times, sampling_intervals,
-                       ignore_part_beg, ignore_part_end, samples_per_hour, diff_time, path, days_for_calc): ### TODO ###
+def groups_calculation(method, types_names, df, c_times, sampling_intervals, ignore_part_beg, ignore_part_end,
+                       samples_per_hour, diff_time, path, days_for_calc):
+    """
+
+    :param method:
+    :param types_names:
+    :param df:
+    :param c_times:
+    :param sampling_intervals:
+    :param ignore_part_beg:
+    :param ignore_part_end:
+    :param samples_per_hour:
+    :param diff_time:
+    :param path:
+    :param days_for_calc:
+    :return:
+    """
 
     groups_calc_values = {}
 
     for name in types_names:
-        values = calculate_activity_patterns(DF[name], method, start_time, c_times, sampling_intervals, ignore_part_beg,
+        values = calculate_activity_patterns(df[name], method, c_times, sampling_intervals, ignore_part_beg,
                                              ignore_part_end, samples_per_hour, diff_time, path, days_for_calc)
         groups_calc_values[name] = values
 
@@ -278,12 +302,20 @@ def groups_calculation(method, types_names, DF, num_of_groups, start_time, c_tim
 
 
 def period_results_graph(results, group_names, method, path):
+    """
+
+    :param results:
+    :param group_names:
+    :param method:
+    :param path:
+    :return:
+    """
 
     fig = plt.figure(frameon=False)
 
     dd = pd.DataFrame.from_dict(results)
 
-    mean_value, std_value, se_value = calc_statistic_values(dd, 0)  # TODO 0 for calc on cols
+    mean_value, std_value, se_value = calc_statistic_values(dd, 0)
 
     mean_value = [mean_value[name] for name in group_names]
     se_value = [se_value[name] for name in group_names]
@@ -308,21 +340,27 @@ def period_results_graph(results, group_names, method, path):
 
 
 def g_factor_results_graph(data_to_pres, group_names, action, path):
-    fig = plt.figure(frameon=False)
+    """
 
+    :param data_to_pres:
+    :param group_names:
+    :param action:
+    :param path:
+    :return:
+    """
+    fig = plt.figure(frameon=False)
     # data_as_list = [value for value in data_to_pres.values()]
     data_as_list = [[x for x in lst if x is not None] for lst in data_to_pres.values()]
-    plt.boxplot(data_as_list, zorder=0, showcaps=False, showbox=False, labels=group_names,
-                medianprops={"color": "b", "linewidth": 2})
+    plt.boxplot(data_as_list, showcaps=False, showbox=False, sym="", whiskerprops={"linestyle": ""}, labels=group_names,
+                medianprops={"color": "r", "linewidth": 2})
 
-    patch = mpatches.Patch(color='blue', label="Median")
+    patch = mpatches.Patch(color="red", label="Median")
     plt.legend(handles=[patch])
 
     for i in range(len(group_names)):
         y = data_as_list[i]
         x = np.random.normal(1+i, 0, size=len(y))
-        plt.plot(x, y, 'k.', markersize=5, alpha=1)
-        # plt.figtext(i/2 + 1/4, medians[i] + 0.2, medians[i],  horizontalalignment='center',  color='k', weight='semibold')
+        plt.plot(x, y, ".", markersize=5)
 
     plt.ylabel("G factor")
     plt.title("G factor by group")
@@ -330,7 +368,15 @@ def g_factor_results_graph(data_to_pres, group_names, action, path):
     return fig
 
 
-def amp_phase_results_graph(results, group_names, method, title, path):
+def amp_phase_results_graph(results, group_names, method, path):
+    """
+
+    :param results:
+    :param group_names:
+    :param method:
+    :param path:
+    :return:
+    """
 
     fig = plt.figure(figsize=(8, 4.8), dpi=100, frameon=False)
     if method == "average_amplitude":
@@ -339,7 +385,7 @@ def amp_phase_results_graph(results, group_names, method, title, path):
         fig.suptitle("Amplitude & phase by group")
 
     amplitude_results = {key: results[key]["amplitude"] for key in results}
-    phase_results = {key: results[key]["phase c.t."] for key in results}
+    phase_results = {key: results[key]["phase CT"] for key in results}
 
     amplitude_results = pad_to_match_lengths(amplitude_results)
     phase_results = pad_to_match_lengths(phase_results)
@@ -384,10 +430,6 @@ def amp_phase_results_graph(results, group_names, method, title, path):
     return fig
 
 
-def f(t):
-    return np.exp(-t) * np.cos(2*np.pi*t)
-
-
 def manage_statistic_tests(groups, method, group_names):
     """
     Run statistic test for every two groups
@@ -426,7 +468,6 @@ def statistic_tests(group1, group2, method):
 
 
 def pad_to_match_lengths(dict_of_lists):
-    # print("pad_to_match_lengths -> dict_of_lists: ", dict_of_lists)
     max_len = 0
     for key in dict_of_lists.keys():
         lst_len = len(dict_of_lists[key])
@@ -437,5 +478,4 @@ def pad_to_match_lengths(dict_of_lists):
         lst_len = len(dict_of_lists[key])
         if lst_len < max_len:
             dict_of_lists[key] += [None] * (max_len-lst_len)
-    # print("pad_to_match_lengths -> dict_of_lists2: ", dict_of_lists)
     return dict_of_lists

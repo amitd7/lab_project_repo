@@ -27,7 +27,9 @@ def amplitude_phase(measurements, interval_duration, window_size, samples_per_ho
     trough = min(smoothed_day_data)
 
     amplitude_value = float("%.4f" % ((peak - trough) / 2))
-    phase_value = [day_times[np.argmax(smoothed_day_data)], float("%.4f" % day_ct[np.argmax(smoothed_day_data)])]
+
+    phase_value = [day_times[np.argmax(smoothed_day_data)],
+                   float("%.4f" % day_ct[np.argmax(smoothed_day_data)]) % HOURS_PER_DAY]
     return [amplitude_value, phase_value]
 
 
@@ -46,8 +48,7 @@ def average_amplitude(from_ct, num_of_days, larva_data, circadian_times, interva
         peak = max(curr_data)
         trough = min(curr_data)
         amplitudes += ((peak - trough) / 2)
-
-        phases += curr_ct[np.argmax(curr_data)]
+        phases += ((curr_ct[np.argmax(curr_data)]) % HOURS_PER_DAY)
         index += samples_per_day
 
     return float("%.4f" % (amplitudes / num_of_days)), float("%.4f" % (phases / num_of_days))
@@ -61,14 +62,14 @@ def average_amplitude_wrap(from_ct, num_of_days, data_table, circadian_times, gr
 
     for name in group_names:
         columns_headers = data_table[name].columns.values.tolist()
-        avg_val_dict = {"amplitude": [], "phase c.t.": []}
+        avg_val_dict = {"amplitude": [], "phase CT": []}
 
         for i, header in enumerate(columns_headers):
             samples_data = data_table[name][header].tolist()
             smoothed_data = smooth_data(samples_data, window)
             amp, phs = average_amplitude(from_ct, num_of_days, smoothed_data, circadian_times, interval_dur, diff_time)
             avg_val_dict["amplitude"].append(amp)
-            avg_val_dict["phase c.t."].append(phs)
+            avg_val_dict["phase CT"].append(phs)
 
         avg_by_name[name] = avg_val_dict
 

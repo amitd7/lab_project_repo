@@ -18,9 +18,11 @@ CIRCADIAN_TIME = HOURS_PER_DAY = 24
 MINUTES_PER_HOUR = 60
 MINUTES_PER_DAY = 1440
 
-style.use("ggplot")
+# style.use("ggplot")
 # style.use("seaborn-dark")
 # style.use("bmh")
+print(style.use("seaborn-deep"))
+# print(style.available)
 
 # GUI and GUI-related functions:
 
@@ -84,7 +86,7 @@ def select_groups_screen(previous_root):
 
     top_frame = tk.Frame(root)
     select_groups_label = tk.Label(master=top_frame, font=14,
-                                   text="Please write in every cell the number of group it belongs to ", pady=20)
+                                   text="Please write in every entry the number of group it belongs to ", pady=20)
     names_label = tk.Label(master=top_frame, font=14, text=separate_names_to_show())
 
     select_groups_label.pack()
@@ -126,7 +128,7 @@ def is_groups_table_valid(plate_values):
     """
     row = len(plate_values)
     col = len(plate_values[0])
-    groups_nums = [i for i in range(num_of_groups)]
+    # groups_nums = [i for i in range(num_of_groups)]
 
     for r in range(row):
         for c in range(col):
@@ -194,7 +196,8 @@ def clicked_next(previous_root):
     if not re.match(start_time_pattern, circadian_start_time_sv.get(), flags=0):
         tk.messagebox.showinfo("Error", "Circadian time 0 has an invalid input")
         return
-    if not re.match(time_bin_pattern, sampling_intervals_sv.get(), flags=0) or sampling_intervals_sv.get() == "00:00:00":
+    if not re.match(time_bin_pattern, sampling_intervals_sv.get(), flags=0) or sampling_intervals_sv.get() == \
+            "00:00:00":
         tk.messagebox.showinfo("Error", "Time bin has an invalid input")
         return
 
@@ -210,7 +213,7 @@ def submit_data(previous_root, plate_values, wait_label):
     :param wait_label:
     :return:
     """
-    global full_data_table, c_times, diff_times_to_add
+    global full_data_table, c_times, diff_times_to_add, wells_names_by_type
     table_input_validation = is_groups_table_valid(plate_values)
 
     if table_input_validation:
@@ -280,7 +283,6 @@ def separate_by_group(table_vals):
             val = table_vals[i][j]
             if not val == "":
                 wells_by_group[int(val)].append(str(names_table[i][j]))
-    print("wells_by_group: ", wells_by_group)
     return wells_by_group
 
 
@@ -299,8 +301,10 @@ def choose_calculation_screen(previous_root):
     top_frame = tk.Frame(root)
 
     # create graph of all data
-    fig = core.graph_data(sampling_intervals, c_times, diff_times_to_add, types_names, full_data_table, samples_per_hour
-                          , path_only)
+    title = "Average data per experimental group by time"
+    filename = "data_average_graph"
+    fig = core.graph_data(c_times, diff_times_to_add, types_names, full_data_table, samples_per_hour, path_only, title,
+                          filename)
     canvas = FigureCanvasTkAgg(fig, master=top_frame)
     canvas.show()
     canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
@@ -309,23 +313,23 @@ def choose_calculation_screen(previous_root):
 
     bottom_frame = tk.Frame(root)
 
-    period_btn = tk.Button(master=bottom_frame, text="  Calculate Period  ", bg='gainsboro',
+    period_btn = tk.Button(master=bottom_frame, text="  Calculate Period  ", bg="gainsboro",
                            command=lambda: period_g_settings_popup(root, "period"))
     period_btn.grid(row=0, columnspan=3, ipadx=5, padx=5, pady=3)
 
-    g_factor_btn = tk.Button(master=bottom_frame, text="  Calculate G factor  ", bg='gainsboro',
+    g_factor_btn = tk.Button(master=bottom_frame, text="  Calculate G factor  ", bg="gainsboro",
                              command=lambda: period_g_settings_popup(root, "g_factor"))
     g_factor_btn.grid(row=1, columnspan=3, ipadx=5, padx=5, pady=3)
 
-    amplitude_btn = tk.Button(master=bottom_frame, text="  Calculate Amplitude & Phase  ", bg='gainsboro',
+    amplitude_btn = tk.Button(master=bottom_frame, text="  Calculate Amplitude & Phase  ", bg="gainsboro",
                               command=lambda: amplitude_settings_popup(root, "amplitude_phase"))
     amplitude_btn.grid(row=2, columnspan=3, ipadx=5, padx=5, pady=3)
 
-    export_data_btn = tk.Button(master=bottom_frame, text="  Export Raw Data  ", bg='gainsboro',
+    export_data_btn = tk.Button(master=bottom_frame, text="  Export Raw Data  ", bg="gainsboro",
                                 command=lambda: export_raw_data(full_data_table, "raw data"))
     export_data_btn.grid(row=3, columnspan=3, ipadx=5, padx=5, pady=3)
 
-    export_smoothed_data_btn = tk.Button(master=bottom_frame, text="  Export Smoothed Data  ", bg='gainsboro',
+    export_smoothed_data_btn = tk.Button(master=bottom_frame, text="  Export Smoothed Data  ", bg="gainsboro",
                                          command=lambda: export_raw_data(smooth_all_data(full_data_table,
                                                                          smoothed_window_entry.get()), "smoothed data"))
     export_smoothed_data_btn.grid(row=4, column=0, ipadx=5, padx=5, pady=3)
@@ -337,7 +341,7 @@ def choose_calculation_screen(previous_root):
     window_after_text = tk.Label(master=bottom_frame, text="(time points window)")
     window_after_text.grid(row=4, column=2, sticky=tk.E, pady=3)
 
-    back_btn = tk.Button(master=bottom_frame, text="  Back  ", bg='gainsboro',
+    back_btn = tk.Button(master=bottom_frame, text="  Back  ", bg="gainsboro",
                          command=lambda: show_previous_screen(root, previous_root))
     back_btn.grid(row=5, columnspan=3, ipadx=5, padx=5, pady=3)
 
@@ -376,7 +380,6 @@ def period_g_factor_settings_input_check(previous_root, action, method_type):
                 int(to_period_entry.get()):  # TODO can they have the same value??
             messagebox.showinfo("Error", "Period range is not valid")
             return
-    print("period_g_factor_settings_input_check before calc action")
     calc_action(previous_root, action, method_type)
 
 
@@ -397,7 +400,7 @@ def period_g_settings_popup(previous_root, action):
     global from_day_entry, for_days_entry, from_period_entry, to_period_entry
 
     value = tk.StringVar()
-    box = ttk.Combobox(top_frame, textvariable=value, state='readonly')  # TODO can I remove the value variable?
+    box = ttk.Combobox(top_frame, textvariable=value, state="readonly")  # TODO can I remove the value variable?
     if action == "period":
         methods_label = tk.Label(master=top_frame, text="Choose method: ")
         methods_label.grid(row=0, column=0, sticky=tk.E, pady=3)
@@ -425,7 +428,7 @@ def period_g_settings_popup(previous_root, action):
         to_period_entry.insert(0, 32)
         to_period_entry.grid(row=2, column=4, pady=3)
 
-    days_label = tk.Label(master=top_frame, text="Start calculate from c.t. ")
+    days_label = tk.Label(master=top_frame, text="Start calculate from CT ")
     days_label.grid(row=1, column=0, sticky=tk.E, pady=3)
 
     from_day_label = tk.Label(master=top_frame, text=" for ")
@@ -499,7 +502,7 @@ def amplitude_settings_popup(previous_root, action):
     window_sec_label = tk.Label(master=top_frame, text="(number of time points) ")
     window_sec_label.grid(row=0, column=2, columnspan=2, pady=3)
 
-    amp_day_label = tk.Label(master=top_frame, text="Calculate amplitude & phase from c.t. ")
+    amp_day_label = tk.Label(master=top_frame, text="Calculate amplitude & phase from CT ")
     amp_day_label.grid(row=1, column=0,  pady=3, sticky=tk.E)
 
     amp_from_day_entry = tk.Entry(master=top_frame, bd=2, width=5)
@@ -509,7 +512,7 @@ def amplitude_settings_popup(previous_root, action):
                               amp_settings_input_check(amplitude_settings, action, None))
     calculate_btn.grid(row=2, column=2, columnspan=3, pady=10)
 
-    days_label = tk.Label(master=top_frame, text="For average amplitude & phase calculate from c.t. ")
+    days_label = tk.Label(master=top_frame, text="calculate average amplitude & phase from CT ")
     days_label.grid(row=3, column=0, sticky=tk.E, pady=3)
 
     avg_amp_from_time_entry = tk.Entry(master=top_frame, bd=2, width=5)
@@ -570,13 +573,10 @@ def calc_action(previous_root, action, method_type):
             core.pc.from_period = int(from_period_entry.get()) * MINUTES_PER_HOUR
             core.pc.to_period = int(to_period_entry.get()) * MINUTES_PER_HOUR
 
-    results_values = core.groups_calculation(action, types_names, full_data_table, num_of_groups, start_time, c_times,
-                                             sampling_intervals, ignore_part_beg, samples_to_ignore_end,
-                                             samples_per_hour, diff_times_to_add, path_only, days_for_calc)
-    # print("results_values:   ", results_values)
-
+    results_values = core.groups_calculation(action, types_names, full_data_table, c_times, sampling_intervals,
+                                             ignore_part_beg, samples_to_ignore_end, samples_per_hour,
+                                             diff_times_to_add, path_only, days_for_calc)
     print("results_values padded:   ", results_values)
-    # print("results_values2:   ", results_values)
 
     if action == "fourier" or action == "chi_square":
         results_values = core.pad_to_match_lengths(results_values)
@@ -658,6 +658,7 @@ def results_screen(previous_root, results_values, action, func_name, btn_name):
     root = tk.Tk()
     root.geometry("640x580")
     root.resizable(height=False, width=False)
+    # root.wm_title("Amitool")
 
     top_frame = tk.Frame(root)
     # create graph of results
@@ -675,11 +676,11 @@ def results_screen(previous_root, results_values, action, func_name, btn_name):
     test_score.grid(row=0, column=1, ipadx=5, padx=5, pady=3)
     test_score.configure(state="readonly")
 
-    test_btn = tk.Button(master=bottom_frame, text=btn_name, bg='gainsboro',
+    test_btn = tk.Button(master=bottom_frame, text=btn_name, bg="gainsboro",
                          command=lambda: groups_stat_tests_call(test_score, results_values, action))
     test_btn.grid(row=0, column=0, ipadx=5, padx=5, pady=3)
 
-    export_btn = tk.Button(master=bottom_frame, text="  Export results  ", bg='gainsboro',
+    export_btn = tk.Button(master=bottom_frame, text="  Export results  ", bg="gainsboro",
                            command=lambda: save_to_excel(results_values, action, eval_text_entry(test_score.get())))
     export_btn.grid(ipadx=5, padx=5, pady=3, columnspan=2)
 
@@ -693,10 +694,11 @@ def amp_phase_results_screen(previous_root, results_values, action):
     root = tk.Tk()
     root.geometry("800x580")
     root.resizable(height=False, width=False)
+    # root.wm_title("Amitool")
 
     top_frame = tk.Frame(root)
     # create graph of results
-    fig = core.amp_phase_results_graph(results_values, types_names, action, action, path_only)
+    fig = core.amp_phase_results_graph(results_values, types_names, action, path_only)
     canvas = FigureCanvasTkAgg(fig, master=top_frame)
     canvas.show()
     canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
@@ -706,7 +708,7 @@ def amp_phase_results_screen(previous_root, results_values, action):
     bottom_frame = tk.Frame(root)
 
     amplitude_results = {key: results_values[key]["amplitude"] for key in results_values}
-    phase_results = {key: results_values[key]["phase c.t."] for key in results_values}
+    phase_results = {key: results_values[key]["phase CT"] for key in results_values}
     full_phase_results = results_values
     for key in full_phase_results.keys():
         del full_phase_results[key]["amplitude"]
@@ -760,12 +762,19 @@ def find_max_length(phase_data):
 
 def save_to_excel(data_to_write, filename, p_values_d):
 
+    print("save_to_excel -> wells_names_by_type: ", wells_names_by_type)
+    print("save_to_excel -> data_to_write: ", data_to_write)
     # data_to_write has to be a dictionary
     results_df_for_export = pd.DataFrame()
     # Create a Pandas Excel writer using XlsxWriter as the engine.
     writer = pd.ExcelWriter(path_only + filename + ".xlsx", engine="xlsxwriter")
     n = 0
+    arenas = {name: wells_names_by_type[types_names.index(name)] for name in types_names}
+    arenas = core.pad_to_match_lengths(arenas)
+
     for i, name in enumerate(types_names):
+        results_df_for_export[name+" arenas"] = arenas[name]
+        print("len(arenas[name]) : ", len(arenas[name]))
         if filename == "phase" or filename == "average phase":
             for key in data_to_write[name]:
                 p_max_len = find_max_length(data_to_write)
@@ -837,6 +846,12 @@ def export_raw_data(data_tables, filename):
     # Close the Pandas Excel writer and output the Excel file.
     writer.save()
 
+    if filename == "smoothed data":
+        title = "Average smoothed data per experimental group by time"
+        filename = "smoothed data average graph"
+        core.graph_data(c_times, diff_times_to_add, types_names, data_tables, samples_per_hour, path_only, title,
+                        filename)
+
 
 def smooth_group_data(full_data, name, window=20):
 
@@ -871,7 +886,7 @@ def break_amp_phase_to_dict(data):
     for i, name in enumerate(types_names):
         group_dict = {"amplitude": [data[name][i][0] for i in range(len(data[name]))],
                       "phase": [data[name][i][1][0] for i in range(len(data[name]))],
-                      "phase c.t.": [data[name][i][1][1] for i in range(len(data[name]))]}
+                      "phase CT": [data[name][i][1][1] for i in range(len(data[name]))]}
         full_dict[name] = group_dict  # pd.DataFrame.from_dict(group_dict)
     return full_dict
 
@@ -978,7 +993,7 @@ def main():
 
     root.geometry("425x600")
     root.resizable(height=False, width=False)
-    root.wm_title("Hello")
+    root.wm_title("Amitool")
 
     top_frame = tk.Frame(master=root)
 
@@ -1023,10 +1038,10 @@ def main():
     browse_entry = tk.Entry(master=middle_frame, bd=2, textvariable=brows_sv)
 
     plate_size_label = tk.Label(master=middle_frame, text="Plate size ")
-    plate_size_row_label = tk.Label(master=middle_frame, text="row ")
+    plate_size_row_label = tk.Label(master=middle_frame, text="rows ")
     plate_size_entry = tk.Entry(master=middle_frame, bd=2, width=5, textvariable=plate_size_x_sv)
     # plate_size_label_2 = tk.Label(master=middle_frame, text=" x ")
-    plate_size_col_label = tk.Label(master=middle_frame, text="column ")
+    plate_size_col_label = tk.Label(master=middle_frame, text="columns ")
     plate_size_entry_2 = tk.Entry(master=middle_frame, bd=2, width=5, textvariable=plate_size_y_sv)
 
     num_of_groups_label = tk.Label(master=middle_frame, text="Number of groups ")
@@ -1121,22 +1136,7 @@ def main():
 
 if __name__ == "__main__":
 
-    # xls_to_csv(input_file_path, "Analysis", "files/csv_file.csv")
-    # DF = parse_input("C:/Users/Amit/PycharmProjects/lab_project_repo/LabProject/files/csv_file.csv")
-
-    # input_file = "C:/Users/Amit/PycharmProjects/lab_project_repo/LabProject/files/csv_file.csv"
-    #
-    # start_time = datetime(datetime.now().year, datetime.now().month, datetime.now().day, hour=int(9),
-    #                       minute=int(0))
-
-    # group_names = ["wt", "mut"]
-    # full_data = core.parse_input(input_file, group_names, wells_names_by_type, 2, start_time, 10, 2, 3, 5, 0)
-    # num_of_groups = 2
-    #
-    # print("smooth_all_data(): ", smooth_all_data())
-
     main()
-
 
 
 
