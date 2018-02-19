@@ -2,7 +2,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import math
 from math import cos, pi, sin
-from pprint import pprint
 
 
 global from_period, to_period
@@ -12,36 +11,32 @@ global from_period, to_period
 def calculate_periodogram(measurements, header, method, interval, path):
 
     global interval_duration
-    interval_duration = interval  # TODO make sure it is initizlized
+    interval_duration = interval
 
     if method == "fourier":
         periods, periodogram_values, p_values = calculate_fourier_periodogram(measurements)
     else:
-        periods, periodogram_values, p_values = calc_chi_square_periodogram(measurements, header)
-    #################
-    fp = int(from_period / interval_duration)
-    tp = int(to_period / interval_duration)
-    max_ind = peak_finder(periodogram_values, fp, tp, p_values, interval, header)
-    # print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
-    # peak_finder(periodogram_values, from_period, to_period, p_values, interval)
-    #################
+        periods, periodogram_values, p_values = calc_chi_square_periodogram(measurements)
+
+    max_ind = peak_finder(periodogram_values, p_values)
 
     # incorporate calibration
     periods = inc_calib(np.array(periods))
     # convert units from minutes to hours
     periods = [x / 60 for x in periods]
-    # print("calculate_periodogram -> max_ind: ", max_ind)
-    max_index = np.argmax(periodogram_values)
-    # print("calculate_periodogram -> max_index: ", max_index)
+
     significant_period = periods[max_ind]
-    # print("calculate_periodogram -> significant_period: ", significant_period)
-    mark_max_value = [significant_period] * len(periods)
+
     larva_period_value = float("%.4f" % significant_period)
     if method == "fourier":
 
         plt.figure()
-        plt.plot(periods, periodogram_values, 'b', mark_max_value, periodogram_values, 'k:')
-        plt.title("Periodogram (Fourier) - %s" % header)
+        plt.plot(periods, periodogram_values, "b")
+        plt.axvline(x=significant_period, color="k")
+        ax = plt.gca()
+        (y_bottom, y_top) = ax.get_ylim()
+        plt.text(significant_period, y_top+0.03, float("%.2f" % larva_period_value))
+        plt.title("Periodogram (Fourier) - %s" % header, y=1.05)
         plt.xlabel("Period (h)")
         plt.ylabel("R^2")
         plt.savefig(path + "Periodogram (Fourier) - %s" % header)
@@ -49,8 +44,12 @@ def calculate_periodogram(measurements, header, method, interval, path):
         # plt.clf()
     else:
         plt.figure()
-        plt.plot(periods, periodogram_values, 'b', periods, p_values, 'r--', mark_max_value, periodogram_values, 'k:')
-        plt.title("Periodogram (Chi-Square) - %s" % header)
+        plt.plot(periods, periodogram_values, 'b', periods, p_values, "r--")
+        plt.axvline(x=significant_period, color="k")
+        ax = plt.gca()
+        (y_bottom, y_top) = ax.get_ylim()
+        plt.text(significant_period, y_top+0.03, float("%.2f" % larva_period_value))
+        plt.title("Periodogram (Chi-Square) - %s" % header, y=1.05)
         plt.xlabel("Period (h)")
         plt.ylabel("Qp")
         plt.savefig(path + "Periodogram (Chi-Square) - %s" % header)
@@ -97,8 +96,8 @@ def r2(measurements, j):
     return float(a_j ** 2 + b_j ** 2)
 
 
-def calc_chi_square_periodogram(measurements, header, p_value=0.05):
-    M = 0
+def calc_chi_square_periodogram(measurements, p_value=0.05):
+    measurements_mean = 0
     n = len(measurements)
     fp = int(from_period / interval_duration)
     tp = int(to_period / interval_duration)
@@ -109,31 +108,31 @@ def calc_chi_square_periodogram(measurements, header, p_value=0.05):
 
     for i in range(0, n):
         if not math.isnan(measurements[i]):
-            M += measurements[i]
-    M /= n
+            measurements_mean += measurements[i]
+    measurements_mean /= n
 
     mse = 0
     for i in range(0, n):
         if not math.isnan(measurements[i]):
-            diff = measurements[i] - M
+            diff = measurements[i] - measurements_mean
             mse += (diff * diff)
     mse /= n
 
     for P in range(fp, tp):
-        Qp = 0
-        K = int(n / P)  # integer division
+        q_p = 0
+        num_of_blocks = int(n / P)  # integer division
         for h in range(0, P):
-            Mh = 0
-            for k in range(0, K):
+            mean_of_block = 0
+            for k in range(0, num_of_blocks):
                 if not math.isnan(measurements[h + k * P]):
-                    Mh += measurements[h + k * P]
-            Mh /= K
-            diff = Mh - M
-            Qp += (diff * diff)
+                    mean_of_block += measurements[h + k * P]
+            mean_of_block /= num_of_blocks
+            diff = mean_of_block - measurements_mean
+            q_p += (diff * diff)
 
-        Qp = Qp * K / mse
+        q_p = q_p * num_of_blocks / mse
         period[P - fp] = P
-        periodogram_values[P - fp] = float(Qp)
+        periodogram_values[P - fp] = float(q_p)
         pv = p_value / 10.0
         p_values[P - fp] = float(chi_square_cdf_inv(1 - pv, P-1))
 
@@ -173,7 +172,7 @@ def inc_calib(periods):
     return periods
 
 
-def peak_finder(values, fp, tp, p_values, factor, header):
+def peak_finder(values, p_values):
     # find peaks
     # use p-values as references
     relatives = list(values)
@@ -181,51 +180,4 @@ def peak_finder(values, fp, tp, p_values, factor, header):
     # use p values as references
     for i in range(0, len(values)):
         relatives[i] -= p_values[i]
-    max_ind = relatives.index(max(relatives))
-    # print("peak_finder ->  max_ind: ", max_ind)
-
-    # print("peak_finder ->  relatives2: ", relatives)
-    # peaks = find_peaks(relatives)
-
-    # print("peak_finder ->  peaks: ", peaks)
-    # yminmax = [min(values), max(values)]
-    # print("peak_finder ->  yminmax: ", yminmax)
-    # # draw the peaks
-    # p = peaks[0]
-    # print("peak_finder ->  p: ", p)
-    # x = p / (tp - fp)
-    # print("peak_finder ->  x: ", x)
-    # y = (yminmax[1] - values[p]) / (yminmax[1] - yminmax[0])
-    # print("peak_finder ->  y: ", y)
-    # period = (fp + p) * factor
-    # print("peak_finder ->  period: ", period)
-    # plot.addLabel(x, y, df.format(period))
-    return max_ind
-
-
-def find_peaks(signal):
-    s = {}
-
-    first_with_max_value = 0
-    last_value = signal[0]
-    for i in range(1, len(signal)):
-        v = signal[i]
-        if v > last_value:
-            first_with_max_value = i
-        elif v < last_value and first_with_max_value != -1:
-            idx = int((first_with_max_value + (i - 1)) / 2)
-            s[idx] = signal[idx]
-            first_with_max_value = -1
-        last_value = v
-    print("")
-    print("find_peaks -> s: ", s)
-    print("")
-    peaks = [None] * len(s)
-    i = int(len(peaks) - 1)
-
-    for key in s.keys():
-        peaks[i] = key
-        i -= 1
-
-    return peaks
-
+    return relatives.index(max(relatives))

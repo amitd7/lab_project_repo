@@ -26,8 +26,7 @@ def g_factor_calculation(larva_measurements_vec, number_of_days, samples_per_hou
     py = y * y.conj() / number_of_time_points
     py = py.real  # [float(i) for i in py]
 
-    # test_factor = py[location_circadian+1]
-    return float("%.4f" % float(py[location_circadian+1] / np.sum(np.array(py[1: (len(f)+1)]))))  # py[location_circadian+1] / np.sum(np.array(py[1: (len(f)+1)]))
+    return float("%.4f" % float(py[location_circadian+1] / np.sum(np.array(py[1: (len(f)+1)]))))
 
 
 # same as python range but for floats too
@@ -44,7 +43,6 @@ def frange(start, stop, span):
         start += span
 
 
-# TODO how to make the calculation if I have more then two types (i.e more then 2 vectors)?
 def g_factor_significant(g_factor_group_1, g_factor_group_2):
     """
     receives two lists of g factor calculated from two groups and runs Kolmogorov-Smirnov statistic test on every
