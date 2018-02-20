@@ -75,7 +75,7 @@ def select_groups_screen(previous_root):
     :return:
     """
     previous_root.withdraw()
-    root = tk.Tk()
+    root = tk.Toplevel()
     root.geometry("430x600")
     root.resizable(height=False, width=False)
     root.wm_title("Amitool")
@@ -112,8 +112,8 @@ def select_groups_screen(previous_root):
     back_button.grid(ipadx=5, padx=5, pady=2)
 
     bottom_frame.pack(expand=True)
-
-    # root.mainloop()
+    root.protocol("WM_DELETE_WINDOW", on_closing)
+    root.mainloop()
 
 
 def is_groups_table_valid(plate_values):
@@ -277,17 +277,33 @@ def separate_by_group(table_vals):
 
 
 def popup_msg(msg, root, previous_root):
-    popup = tk.Tk()
+    popup = tk.Toplevel()
     popup.wm_title("Error")
-    label = ttk.Label(popup, text=msg)
+    popup.resizable(height=False, width=False)
+    popup.grab_set()  # set the focus on the popup only
+    label = tk.Label(popup, text=msg, padx=3, justify=tk.LEFT)
     label.pack(side="top", fill="x", pady=10)
     ok_btn = ttk.Button(popup, text="Ok", command=lambda: close_popup(popup, root, previous_root))
-    ok_btn.pack()
+    ok_btn.pack(pady=10)
+    popup.protocol("WM_DELETE_WINDOW", do_nothing)  # do nothing when clicking the x button
     popup.mainloop()
 
 
+# do nothing when clicking the x button on the popup message
+def do_nothing():
+    pass
+
+
 def close_popup(popup, root, previous_root):
+    """
+    close error popup message
+    :param popup: the popup object to close
+    :param root: the screen where the popup came from
+    :param previous_root: the previous screen to show
+    :return:
+    """
     popup.destroy()
+    previous_root.grab_release()
     show_previous_screen(root, previous_root)
 
 
@@ -297,9 +313,8 @@ def choose_calculation_screen(previous_root):
     :param previous_root:
     :return:
     """
-
-    previous_root.withdraw()  # TODO if hide, then need to make sure that when backing it opens the right screen
-    root = tk.Tk()
+    previous_root.withdraw()
+    root = tk.Toplevel()
     root.geometry("700x680")
     root.resizable(height=False, width=False)
     root.wm_title("Amitool")
@@ -313,10 +328,8 @@ def choose_calculation_screen(previous_root):
                           filename)
     if fig == "IndexError":
         msg = "An error has occurred while reading the file.\nPlease make sure the fields are filled correctly and " \
-              "try again"
+              "try again."
         popup_msg(msg, root, previous_root)
-        # messagebox.showerror("Error", "An error has occurred while reading the file.\nPlease make sure the "
-        #                               "fields are filled correctly and try again")
         return
     canvas = FigureCanvasTkAgg(fig, master=top_frame)
     canvas.show()
@@ -359,6 +372,7 @@ def choose_calculation_screen(previous_root):
     back_btn.grid(row=5, columnspan=3, ipadx=5, padx=5, pady=3)
 
     bottom_frame.pack()
+    root.protocol("WM_DELETE_WINDOW", on_closing)
     root.mainloop()
 
 
@@ -405,9 +419,8 @@ def period_g_settings_popup(previous_root, action):
     """
     period_settings = tk.Toplevel(master=previous_root)
     period_settings.wm_title("Settings")
-
+    period_settings.resizable(height=False, width=False)
     period_settings.grab_set()  # set the focus on the popup only
-    print("action: ", action)
     top_frame = tk.Frame(master=period_settings)
 
     global from_day_entry, for_days_entry, from_period_entry, to_period_entry
@@ -496,9 +509,8 @@ def amplitude_settings_popup(previous_root, action):
     """
     amplitude_settings = tk.Toplevel(master=previous_root)
     amplitude_settings.wm_title("Settings")
-
+    amplitude_settings.resizable(height=False, width=False)
     amplitude_settings.grab_set()  # set the focus on the popup only
-    print("action: ", action)
     top_frame = tk.Frame(master=amplitude_settings)
 
     global window_entry, amp_from_day_entry, avg_amp_from_time_entry, avg_amp_days_entry
@@ -558,8 +570,6 @@ def calc_action(previous_root, action, method_type):
     :param method_type:
     :return:
     """
-    print("method:  ", method_type)
-
     ignore_part_beg, samples_to_ignore_end, days_for_calc = 0, 0, 0
 
     if action == "amplitude_phase":
@@ -657,11 +667,12 @@ def groups_stat_tests_call(entry, results_values, action):
 
 def results_screen(previous_root, results_values, action, func_name, btn_name):
 
-    # previous_root.destroy()
-    root = tk.Tk()
+    root = tk.Toplevel()
     root.geometry("640x580")
     root.resizable(height=False, width=False)
     root.wm_title("Amitool")
+    # Close the settings window
+    cancel_action(previous_root, root)
 
     top_frame = tk.Frame(root)
     # create graph of results
@@ -692,11 +703,12 @@ def results_screen(previous_root, results_values, action, func_name, btn_name):
 
 def amp_phase_results_screen(previous_root, results_values, action):
 
-    # previous_root.destroy()
-    root = tk.Tk()
+    root = tk.Toplevel()
     root.geometry("800x580")
     root.resizable(height=False, width=False)
     root.wm_title("Amitool")
+    # Close the settings window
+    cancel_action(previous_root, root)
 
     top_frame = tk.Frame(root)
     # create graph of results
@@ -816,9 +828,7 @@ def save_to_excel(data_to_write, filename, p_values_d):
             spaces = 5
             row = len(results_df_for_export.index) + spaces
             p_value_df.to_excel(writer, sheet_name=filename, startrow=row, startcol=0)
-            # print("len(results_df_for_export.columns): ", len(results_df_for_export.columns))
             # col = len(results_df_for_export.columns) + spaces
-            # print("col: ", col)
             # p_value_df.to_excel(writer, sheet_name=filename, startrow=0, startcol=col)
 
         # Close the Pandas Excel writer and output the Excel file.
@@ -1001,12 +1011,19 @@ def set_global_values():
     return
 
 
+def on_closing():
+    if messagebox.askokcancel("Quit", "Do you want to quit?"):
+        main_root.destroy()
+
+
 def main():
+    global main_root
     root = tk.Tk()
 
     root.geometry("425x600")
     root.resizable(height=False, width=False)
     root.wm_title("Amitool")
+    main_root = root
 
     top_frame = tk.Frame(master=root)
 
@@ -1053,7 +1070,6 @@ def main():
     plate_size_label = tk.Label(master=middle_frame, text="Plate size ")
     plate_size_row_label = tk.Label(master=middle_frame, text="rows ")
     plate_size_entry = tk.Entry(master=middle_frame, bd=2, width=5, textvariable=plate_size_x_sv)
-    # plate_size_label_2 = tk.Label(master=middle_frame, text=" x ")
     plate_size_col_label = tk.Label(master=middle_frame, text="columns ")
     plate_size_entry_2 = tk.Entry(master=middle_frame, bd=2, width=5, textvariable=plate_size_y_sv)
 
@@ -1072,7 +1088,6 @@ def main():
     sampling_intervals_label = tk.Label(master=middle_frame, text="Time bin (hh:mm:ss) ")
     sampling_intervals_entry = tk.Entry(master=middle_frame, bd=2, textvariable=sampling_intervals_sv)
 
-    # ignore_nan_values = False
     check_ignore_label = tk.Label(master=middle_frame, text="Set \'-\' values as ")
     check_ignore_entry = tk.Entry(master=middle_frame, bd=2, width=5, textvariable=check_ignore_sv)
     check_ignore_entry.insert(0, 0)
@@ -1145,6 +1160,7 @@ def main():
     excel_well_labels_sv.trace("w", enable_next_button)
     excel_data_sv.trace("w", enable_next_button)
 
+    root.protocol("WM_DELETE_WINDOW", on_closing)
     root.mainloop()
 
 

@@ -442,7 +442,6 @@ def manage_statistic_tests(groups, method, group_names):
     :param group_names:
     :return:
     """
-    print("method ", method)
     num_of_groups = len(group_names)
     p_values = {}
     for i in range(num_of_groups):
