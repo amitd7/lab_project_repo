@@ -1,12 +1,11 @@
 from datetime import timedelta
-from scipy import stats
 
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import xlrd
-
+from scipy import stats
 
 import src.periodogram_calculation as pc
 from src import amplitude_phase, g_factor

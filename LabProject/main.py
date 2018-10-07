@@ -1,16 +1,16 @@
-from datetime import datetime
-from matplotlib import style
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from tkinter import filedialog, ttk, messagebox
-
 import ast
 import os.path
-import pandas as pd
 import re
 import string
 import tkinter as tk
+from datetime import datetime
+from tkinter import filedialog, ttk, messagebox
 
-from src import core
+import pandas as pd
+from matplotlib import style
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+
+from src import core, amplitude_phase
 
 CIRCADIAN_TIME = HOURS_PER_DAY = 24
 MINUTES_PER_HOUR, SECONDS_PER_MIN = 60, 60
@@ -574,7 +574,7 @@ def calc_action(previous_root, action, method_type):
 
     if action == "amplitude_phase":
         core.window_size = int(window_entry.get())
-        core.amplitude_phase.day_start = int(amp_from_day_entry.get())
+        amplitude_phase.day_start = int(amp_from_day_entry.get())
     else:
         hours_to_ignore_beg = int(from_day_entry.get())  # in hours
         days_for_calc = int(for_days_entry.get())
@@ -628,11 +628,11 @@ def average_amp_calc_action(previous_root):
         messagebox.showinfo("Error", "From day and number of days are out of range")
         return
 
-    average_amp_phase_results = core.amplitude_phase.average_amplitude_wrap(int(avg_amp_from_time_entry.get()),
-                                                                            int(avg_amp_days_entry.get()),
-                                                                            full_data_table, c_times, types_names,
-                                                                            int(window_entry.get()), sampling_intervals,
-                                                                            diff_times_to_add)
+    average_amp_phase_results = amplitude_phase.average_amplitude_wrap(int(avg_amp_from_time_entry.get()),
+                                                                       int(avg_amp_days_entry.get()),
+                                                                       full_data_table, c_times, types_names,
+                                                                       int(window_entry.get()), sampling_intervals,
+                                                                       diff_times_to_add)
 
     amp_phase_results_screen(previous_root, average_amp_phase_results, "average_amplitude")
 
@@ -874,7 +874,7 @@ def smooth_group_data(full_data, name, window=20):
         s_data = {}
         for header in columns_headers:
             samples_data = full_data[name][header].tolist()
-            s_data[header] = core.amplitude_phase.smooth_data(samples_data, window)
+            s_data[header] = amplitude_phase.smooth_data(samples_data, window)
         df = pd.DataFrame.from_dict(s_data)
         # Set DataFrame labels
         df.index = full_data[types_names[types_names.index(name)]].index
