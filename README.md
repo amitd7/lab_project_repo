@@ -1,5 +1,3 @@
-# lab_project_repo
+# Amitool
 
-A computational tool that automatically extracts data from a software that tracks and analyzes the behavior, 
-movement and activity of animals to an internal database and outputs a periodical analysis and statistical calculation
-to assist in the study of biological significance of circadian rhythms in organisms.
+Amitool is a software tool for the analysis of circadian rhythms. It was developed for the analysis of zebrafish larval locomotor activity data (EthoVision, Noldus) but is suitable for the analysis of any kind of circadian data.
